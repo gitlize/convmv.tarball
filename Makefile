@@ -15,6 +15,11 @@ manpage:
 
 clean:
 	rm -f convmv.1.gz convmv-*.tar.gz MD5sums .files .name
+	rm -rf suite
+
+test:
+	test -d suite || tar xf testsuite.tar
+	cd suite ; ./dotests.sh
 
 dist: clean
 	sed -n "2,2p" convmv |sed "s/.*convmv \([^ ]*\).*/\1/" > VERSION

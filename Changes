@@ -1,3 +1,11 @@
+1.05
+- --qfrom/to also mask cntrl characters now
+- symlink printout splitted to get correct output
+- missing $arg in symlink fixed (bug introduced in 1.02)
+- add NFS4 issues to documentation
+- add test suite
+- add file length check
+
 1.04
 - add --exec option to allow arbitrary operations
 
