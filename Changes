@@ -1,3 +1,8 @@
+1.08
+- do not complain about wrong from_enc if to_enc is utf8 and files are, too; this happens with from_enc being a multibyte encoding. Thanks to Kuang-che Wu
+- fixed bug, where filename "0" was considered to be wrong utf-8 if from_enc was utf8
+- some documentations updates
+
 1.07
 - add%20option%20to%20undo%20ugly%20http-%20and%20ftp-like%20escape%20sequences
 - add option to upper/lowercase virtually any charset

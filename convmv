@@ -1,6 +1,6 @@
 #!/usr/bin/perl
-# convmv 1.07 - converts filenames from one encoding to another
-# Copyright © 2003 Bjoern JACKE <bjoern@j3e.de>
+# convmv 1.08 - converts filenames from one encoding to another
+# Copyright © 2003-2004 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 # under the terms of the GNU General Public License version 2 as published by
@@ -8,6 +8,7 @@
 
 # to get a man page:
 # pod2man --section 1 --center=" " convmv | gzip > convmv.1.gz
+
 
 =head1 NAME
 
@@ -135,14 +136,45 @@ which are already partly UTF-8 encoded. convmv is able to detect if certain
 files are UTF-8 encoded and will skip them by default. To turn this smartness
 off use the C<--nosmart> switch.
 
-An interoperability issue that comes with UTF-8 locales is this: Linux and
-(most?) other Unix-like operating systems use the so called normalization form
-C (NFC) for its UTF-8 encoding by default but do not enforce this. Darwin, the
-base of the Macintosh OS enforces normalization form D (NFD), where a few
-characters are encoded in a different way. On OS X it's not possible to create
-NFC UTF-8 filenames because this is prevented at filesystem layer. Anywhere
-else convmv is able to convert files from NFC to NFD or vice versa which makes
-interoperability with such systems a lot easier.
+=head2 Filesystem issues
+
+Almost all POSIX filesystems do not care about how filenames are encoded, here
+are some exceptions:
+
+=head3 HFS+ on OS X / Darwin
+
+Linux and (most?) other Unix-like operating systems use the so called
+normalization form C (NFC) for its UTF-8 encoding by default but do not enforce
+this.  Darwin, the base of the Macintosh OS enforces normalization form D
+(NFD), where a few characters are encoded in a different way. On OS X it's not
+possible to create NFC UTF-8 filenames because this is prevented at filesystem
+layer.  On HFS+ filenames are internally stored in UTF-16 and when converted
+back to UTF-8, for the underlying BSD system to be handable, NFD is created. If
+someone knows why Apple chose to do this, please let me know. I think it was a
+very bad idea and breaks many things under OS X which expect normal a POSIX
+conforming system. If you want a nice GUI use OS X, if you want a sane Unix
+don't use OS X. Anywhere else convmv is able to convert files from NFC to
+NFD or vice versa which makes interoperability with such systems a lot easier.
+
+=head3 JFS
+
+If people mount JFS partitions with iocharset=utf8, there is a similar problem,
+because JFS is designed to store finenames internally in UTF-16, too; that is
+because Linux' JFS is really JFS2, which was a rewrite of JFS for OS/2. JFS
+partitions should always be mounted with iocharset=iso8859-1, which is also the
+default with recent 2.6.6 kernels. If this is not done, JFS does not behave
+like a POSIX filesystem and it might happen that certain files cannot be
+created at all, for example filenames in ISO-8859-1 encoding. Only when
+interoperation with OS/2 is needed iocharset should be set according to your
+used locale charmap.
+
+=head3 NFS4
+
+Despite other POSIX filesystems RFC3530 (NFS 4) mandates UTF-8 but also says:
+"The nfs4_cs_prep profile does not specify a normalization form.  A later
+revision of this specification may specify a particular normalization form." In
+other words, if you want to use NFS4 you might find the conversion and
+normalization features of convmv quite useful.
 
 =head2 How to undo double UTF-8 (or other) encoded filenames
 
@@ -172,14 +204,6 @@ old Samba-shared files from cp850 to iso8859-1.
 
 By the way: Samba 3.x finally maps to UTF-8 filenames by default, so also when
 you migrate from Samba 2 to Samba 3 you might have to convert your file names.
-
-=head2 NFS4
-
-Despite other POSIX filesystems RFC3530 (NFS 4) mandates UTF-8 but also says:
-"The nfs4_cs_prep profile does not specify a normalization form.  A later
-revision of this specification may specify a particular normalization form." In
-other words, if you want to use NFS4 you might find the conversion and
-normalization features of convmv quite useful.
 
 =head1 SEE ALSO
 
@@ -461,12 +485,16 @@ sub char_checkenc() {
 	my $oldfile=shift;
 	my $new=$oldfile;
 	if ($from_is_utf8) {
-		if (! decode_utf8($new)) {
+		if (! defined(decode_utf8($new))) {
 			print STDERR "this file was not validly encoded in UTF-8: \"". &$from_print($dir.$oldfile) ."\"\n";
 			return 0;
 		}
 	} else {
-		if (! from_to($new,$opt_f, "utf8", Encode::FB_QUIET) ) {
+		if ($to_is_utf8 and !$opt_nosmart and &looks_like_utf8($oldfile)) {
+			# do nothing: e.g. from_enc is shift_jis but string is utf-8. Should
+			# be "smart-skipped" if to_enc is utf-8 and not produce no error here.
+		}
+		elsif (! from_to($new,$opt_f, "utf8", Encode::FB_QUIET) ) {
 			print STDERR "this file was not validly encoded in $opt_f: \"". &$from_print($dir.$oldfile) ."\"\n";
 			return 0;
 		}
@@ -494,16 +522,16 @@ sub char_checkenc() {
 
 sub printusage {
 	print <<END;
-convmv 1.07 - converts filenames from one encoding to another
-Copyright (C) 2003 Bjoern JACKE <bjoern\@j3e.de>
+convmv 1.08 - converts filenames from one encoding to another
+Copyright (C) 2003-2004 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 under the terms of the GNU General Public License version 2 as published by
 the Free Software Foundation.
 
  USAGE: convmv [options] FILE(S)
--f enc     encoding *from* which should to converted
--t enc     encoding *to* which should to converted
+-f enc     encoding *from* which should be converted
+-t enc     encoding *to* which should be converted
 -r         recursively go through directories
 -i         interactive mode (ask for each action)
 --nfc      target files will be normalization form C for UTF-8 (Linux etc.)
@@ -526,7 +554,7 @@ END
 
 sub looks_like_utf8() {
 	my $string = shift;
-	if (not $string =~ m/^[[:ascii:]]*$/ and decode_utf8($string)) {
+	if ($string =~ m/[^[:ascii:]]/ and decode_utf8($string)) {
 		return 1;
 	} else {
 		return 0;
