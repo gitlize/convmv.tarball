@@ -1,0 +1,322 @@
+#!/usr/bin/perl
+# convmv 1.0 - converts file names from one encoding to another
+# Copyright © 2003 Bjoern Jacke <bjoern@j3e.de>
+#
+# This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
+# under the terms of the GNU General Public License version 2 as published by
+# the Free Software Foundation.
+
+# to get a man page:
+# pod2man --section 1 --center=" " convmv | gzip > convmv.1.gz
+
+=head1 NAME
+
+convmv - converts file names from one encoding to another
+
+=head1 SYNOPSIS
+
+B<convmv> [B<options>] FILE(S) ... DIRECTORY(S)
+
+=head1 OPTIONS
+
+=over 4
+
+=item B<-f ENCODING>
+
+specify the current encoding of the filename(s) from which should be converted
+
+=item B<-t ENCODING>
+
+specify the encoding to which the filename(s) should be converted
+
+=item B<--nfc>
+
+target files will be normalization form C for UTF-8 (Linux etc.)
+
+=item B<--nfd>
+
+target files will be normalization form D for UTF-8 (OS/X etc.)
+
+=item B<--qfrom>
+
+be more quiet about the "from" of a rename (if it screws up your terminal e.g.). This will in fact do nothing else than replace any non-ascii character (bytewise) with ? on printout, this does not affect rename operation itself.
+
+=item B<--qto>
+
+be more quiet about the "to" of a rename (if it screws up your terminal e.g.). This will in fact do nothing else than replace any non-ascii character (bytewise) with ? on printout, this does not affect rename operation itself.
+
+=item B<--list>
+
+list all available encoding
+
+=item B<--nosmart>
+
+by default convmv will detect is a filename is already UTF-8 encoded and will skip this file if conversion from some charset to UTF-8 should be performed. --nosmart will also force conversion to UTF-8 for such files, which might result is "doulbe encoded UTF-8" (see section below).
+
+=item B<--notest>
+
+Needed to actually rename the files. By default convmv will just print what it wants to do.
+
+=item B<--replace>
+
+if the file to which shall be renamed already exists, it will be overwritten if the other file content is equal.
+
+=item B<--help>
+
+print this help
+
+=back
+
+=head1 DESCRIPTION
+
+B<convmv> is meant to help convert a directory tree and the contained files or a whole filesystem into a different encoding. It just converts the filenames, not the content of the files. A special feature of convmv is that it also takes care of symlinks, also converts the symlink target pointer in case the symlink target is being converted, too.
+
+All this comes in very handy when one wants to switch over from old 8bit locales to UTF-8 locales. It is also possible to convert directories to UTF-8 which are already partly UTF-8 encoded. convmv is able to detect if certain files are UTF-8 encoded and will skip them by default. To turn this smartness off use the --nosmart switch.
+
+An interoperability issue that comes with UTF-8 locales is this: Linux and (most?) other Unix-like operating systems use the so called normalization form C (NFC) for its UTF-8 encoding by default but do not enforce this. Darwin, the base of the Macintosh OS enforces normalization form D (NFD), where a few characters are encoded in a different way. convmv is able to convert files to NFC or NFD which makes interoperability to such systems a lot easier.
+
+=head2 How to undo double UTF-8 (or other) encoded filenames
+
+Sometimes it might happen that you "double-encoded" certain filenames, for example the file names already were UTF-8 encoded and you accidently did another conversion from some charset to UTF-8. You can simply undo that by converting that the other way round. The from-charset has to be UTF-8 and the to-charset has to be the from-charset you previously accidently used. You should check to get the correct results by doing the conversion without --notest before, also the --qfrom option might be helpful, because the double-encoded file names might screw up your terminal if they are being printed - they often contain control sequences which do funny things with your terminal window. If you are not sure about the charset which was accidently converted from, using --qfrom is a good way to fiddle out the required encoding without destoying the file names finally.
+
+=head1 SEE ALSO
+
+L<locale(1)> L<utf-8(7)> L<charsets(7)>
+
+=head1 BUGS
+
+eh?
+
+=head1 AUTHOR
+
+Bjoern Jacke
+ 
+Send mail to bjoern [at] j3e.de for bug reports and suggestions.
+
+=cut
+
+require 5.8.0;
+use Getopt::Long;
+use File::Find;
+use Encode 'from_to','is_utf8','encode_utf8','decode_utf8','encode','decode';
+use Unicode::Normalize;
+use utf8;
+use bytes;
+
+Getopt::Long::Configure ("bundling");
+binmode STDOUT, ":bytes";
+binmode STDERR, ":bytes";
+
+GetOptions	('nfc'=>\$opt_nfc,
+		'nfd'=>\$opt_nfd,
+		'f=s'=>\$opt_f,
+		't=s'=>\$opt_t,
+		'i'=>\$opt_i,
+		'list'=>\$opt_list,
+		'help'=>\$opt_help,
+		'notest'=>\$opt_notest,
+		'qfrom'=>\$opt_qfrom,
+		'qto'=>\$opt_qto,
+		'replace'=>\$opt_replace,
+		'nosmart'=>\$opt_nosmart,
+		);
+use File::Compare;
+
+&listvalidencodings and exit 0 if ($opt_list);
+&printusage and exit 1 if (!@ARGV or $opt_help);
+
+$opt_f=Encode::resolve_alias($opt_f) or die "wrong/unknown \"from\" encoding!\n";
+$opt_t=Encode::resolve_alias($opt_t) or die "wrong/unknown \"to\" encoding!\n";
+$from_is_utf8 = lc($opt_f) =~ m/^utf-?8$/;
+$to_is_utf8 = lc($opt_t) =~ m/^utf-?8$/;
+
+if ($opt_qfrom) {
+	$from_print=\&to_ascii;
+} else {
+	$from_print=\&dummy;
+}
+if ($opt_qto) {
+	$to_print=\&to_ascii;
+} else {
+	$to_print=\&dummy;
+}
+
+if ($opt_nfc) {
+	$norm=\&NFC;
+	die "NFC reqires UTF-8 as taget charset\n" unless ($to_is_utf8);
+} elsif ($opt_nfd) {
+	$norm=\&NFD;
+	die "NFD reqires UTF-8 as taget charset\n" unless ($to_is_utf8);
+} else {
+	$norm=\&dummy;
+}
+
+# scan for real files and check charset first:
+find({wanted=>\&scan,bydepth=>1}, @ARGV);
+sub scan {
+	sub checkenc() {
+		my $new=shift;
+		#my $oldorig=$new;
+		$new=encode_utf8(NFC(decode_utf8($new))) if ($from_is_utf8 and ! $to_is_utf8);
+		my $oldfile=$new;
+		if (! from_to($new, $opt_f, $opt_t)) {
+			print STDERR "conversion error, no suitable charset used?$new: \"$File::Find::name\"\n";
+			$errors_occured=1;
+		} elsif (! from_to($new, $opt_t, $opt_f)) {
+			print STDERR "back-conversion error, no suitable charset used?: \"$File::Find::name\"\n";
+			$errors_occured=1;
+		} elsif ($new ne $oldfile) {
+			print STDERR "$opt_t doesn't cover all needed characters for: \"$File::Find::name\"\n";
+			$errors_occured=1;
+		}
+	}
+	if (-l) {
+#		print "link: $File::Find::name $_ in $File::Find::dir\n";
+		&checkenc($_);
+	} elsif (-d) {
+#		print "dir: $File::Find::name $_ in $File::Find::dir\n";
+		$inod_fullname{(stat $_)[1]}=$File::Find::name;
+		&checkenc($_);
+	} elsif (-f) {
+#		print "file: $File::Find::name $_ in $File::Find::dir\n";
+		$inod_fullname{(stat $_)[1]}=$File::Find::name;
+		&checkenc($_);
+	}
+}
+die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occured);
+
+# move symlink targets:
+find({wanted=>\&process_symlink_targets,bydepth=>1}, @ARGV);
+sub process_symlink_targets {
+	if (-l) {
+		$oldlink=readlink $_;
+		if ($newname=&get_newname($oldlink)) {
+			if ( &$norm($newname) ne $oldlink ) {
+				if ( $inod_fullname{(stat $oldlink)[1]}) { # = if (symlink target scanned before)
+					print "symlink \"",&$from_print($File::Find::name),"\" : \"",&$from_print($oldlink),"\" >> \"",&$to_print(&$norm($newname)),"\"\n";
+					if ($opt_notest) {
+						unlink $_;
+						symlink (&$norm($newname), $_);
+					}
+				} else {
+					print STDERR "link target \"",&$from_print($oldlink),"\" in \"",&$from_print($File::Find::dir),"/\" not in subtree, left untouched!\n";
+				}
+			} else { print "no need to convert link target: $oldlink to $newname\n";
+			}
+		}
+	}
+}
+
+# do the changes to all the real files/dirs/links:
+find({wanted=>\&process_main,bydepth=>1}, @ARGV);
+sub process_main {
+	if (-l) {
+#		$type="symlink";
+		$newname=&get_newname($_) and &renameit($_,$newname);
+	} elsif (-d) {
+#		$type="directory";
+		$newname=&get_newname($_) and &renameit($_,$newname);
+	} elsif (-f) {
+#		$type="file";
+		$newname=&get_newname($_) and &renameit($_,$newname);
+	}
+}
+
+sub get_newname {
+	$dir=$File::Find::dir;
+	my $oldfile=shift;
+	my $newname;
+	if (!$from_is_utf8 and $to_is_utf8 and !$opt_nosmart and &looks_like_utf8($oldfile)) {
+		print STDERR "Skipping, already UTF-8: $dir/$oldfile\n";
+		return 0;
+	} else {
+		if ($from_is_utf8 and ! $to_is_utf8) {
+			# from_to can't convert from NFD to non-UTF-8!
+			$newname=encode_utf8(NFC(decode_utf8($oldfile)));
+		} else {
+			$newname=$oldfile;
+		}
+		from_to($newname, $opt_f, $opt_t) or die "conversion error, so suitable charset used?: \"$oldfile\"\nTo prevent damage to your files, we won't continue. First fix this!\n";
+		$newname=decode_utf8($newname) if ($to_is_utf8);
+		if ( &$norm($newname) ne $oldfile ) {
+			return $newname;
+		} else {
+			return 0;
+		}
+	}
+	
+}
+
+sub renameit() {
+	my $oldfile=shift;
+	my $newname=shift;
+	$newname=&$norm($newname);
+	$newname=encode_utf8($newname) if ($to_is_utf8);
+	print "mv \"", &$from_print("$dir/$oldfile"),"\"\t\"",&$to_print("$dir/$newname"),"\"\n";
+	if (-e $newname) {
+		if ($opt_replace and !&compare($oldfile,$newname)) {
+			if ($opt_notest) {
+				unlink $newname or print STDERR $!;
+				rename ($oldfile, $newname) or print STDERR $!;
+			}
+		} else {
+			print STDERR &$to_print($newname)," exists and differs or --replace option missing - skipped\n";
+		}
+	} else {
+		if ($opt_notest) {
+			rename ($oldfile, $newname) or print $!;
+		}
+	}
+#	}
+}
+
+sub listvalidencodings() {
+	print "$_\n" for (Encode->encodings(":all"));
+	return 1;
+}
+
+sub printusage {
+	print <<END;
+convmv 1.0 - converts file names from one encoding to another
+Copyright (C) 2003 Bjoern Jacke <bjoern\@j3e.de>
+
+This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
+under the terms of the GNU General Public License version 2 as published by
+the Free Software Foundation.
+
+ USAGE: convmv [options] FILE(S)
+-f enc    encoding *from* which should to converted
+-t enc    encoding *to* which should to converted
+-i        interactive mode (ask for each action)
+--nfc     target files will be normalization form C for UTF-8 (Linux etc.)
+--nfd     target files will be normalization form D for UTF-8 (OS/X etc.)
+--qfrom   be quiet about the "from" of a rename (if it screws up your terminal e.g.)
+--qto     be quiet about the "to" of a rename (if it screws up your terminal e.g.)
+--list    list all available encoding
+--nosmart ignore if files already seem to be UTF-8 and convert is posible
+--notest  just print out to stdout what will be done
+--replace will replace files if they are equal
+--help    print this help
+END
+#--overwrite if the target file already exists, overwrite if same content
+}
+
+sub looks_like_utf8() {
+	my $string = shift;
+	if (not $string =~ m/^[[:ascii:]]*$/ and decode_utf8($string)) {
+		return 1;
+	} else { return 0; }
+}
+
+sub to_ascii() {
+	my $a=shift;
+	$a =~ s/[^[:ascii:]]/?/g;
+	return $a;
+}
+
+sub dummy() {
+	my $a=shift;
+	return $a;
+}
+
+print STDERR "No changes to your files done. Use --notest to finally rename the files.\n" unless ($opt_notest);
