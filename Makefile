@@ -1,5 +1,5 @@
 DESTDIR=
-PREFIX=/usr
+PREFIX=/usr/local
 MANDIR=$(PREFIX)/share/man
 
 all: manpage
@@ -7,7 +7,7 @@ all: manpage
 install: all
 	mkdir -p $(DESTDIR)$(MANDIR)/man1/
 	mkdir -p $(DESTDIR)$(PREFIX)/bin/
-	cp convmv.1.gz $(DESTDIR)$(PREFIX)$(MANDIR)/man1/
+	cp convmv.1.gz $(DESTDIR)$(MANDIR)/man1/
 	install -m 755 convmv $(DESTDIR)$(PREFIX)/bin/
 
 manpage:

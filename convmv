@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# convmv 1.03 - converts filenames from one encoding to another
+# convmv 1.04 - converts filenames from one encoding to another
 # Copyright © 2003 Bjoern Jacke <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -57,14 +57,24 @@ be more quiet about the "to" of a rename (if it screws up your terminal e.g.).
 This will in fact do nothing else than replace any non-ASCII character
 (bytewise) with ? on printout, this does not affect rename operation itself.
 
+=item B<--exec> command
+
+execute the given command. You have to quote the command and #1 will be
+substituted by the old, #2 by the new filename. Using this option link 
+targets will stay untouched.
+
 =item B<--list>
 
 list all available encodings. To get support for more Chinese or Japanese
-encodings install the HanExtra or JIS2K Encode packages.
+encodings install the Perl HanExtra or JIS2K Encode packages.
 
 =item B<--lowmem>
 
-keep memory footprint low by not creating a hash of all files. This disables checking if symlink targets are in subtree. Symlink target pointers will be converted regardlessly. If you convert multiple hundredthousands or millions of files the memory usage of convmv might grow quite high. This option would help you out in that case.
+keep memory footprint low by not creating a hash of all files. This disables
+checking if symlink targets are in subtree. Symlink target pointers will be
+converted regardlessly. If you convert multiple hundredthousands or millions of
+files the memory usage of convmv might grow quite high. This option would help
+you out in that case.
 
 =item B<--nosmart>
 
@@ -185,6 +195,7 @@ GetOptions	('nfc'=>\$opt_nfc,
 		'replace'=>\$opt_replace,
 		'nosmart'=>\$opt_nosmart,
 		'lowmem'=>\$opt_lowmem,
+		'exec=s'=>\$opt_exec,
 		) or exit 1;
 use File::Compare;
 
@@ -217,6 +228,8 @@ if ($opt_nfc) {
 	$norm=\&dummy;
 }
 
+$opt_lowmem=1 if ($opt_exec);
+
 $pwd=cwd();
 @args=@ARGV;
 undef @ARGV;
@@ -230,16 +243,20 @@ for (@args) {
 if ($opt_r) {
 	find({wanted=>\&scan,bydepth=>1,no_chdir=>1}, @args);
 	die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occured);
-	find({wanted=>\&process_symlink_targets,bydepth=>1,no_chdir=>1}, @args);
+	find({wanted=>\&process_symlink_targets,bydepth=>1,no_chdir=>1}, @args) unless ($opt_exec);
 	find({wanted=>\&process_main,bydepth=>1,no_chdir=>1}, @args);
 } else {
 	for my $a (@args) { &scan($a); }
 	die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occured);
-	for my $a (@args) { &process_symlink_targets($a); }
+	unless ($opt_exec) { for my $a (@args) { &process_symlink_targets($a); } }
 	for my $a (@args) { &process_main($a); }
 }
 
-print STDERR "No changes to your files done. Use --notest to finally rename the files.\n" unless ($opt_notest);
+if ($opt_notest) {
+	print STDERR "Ready!\n",
+} else {
+	print STDERR "No changes to your files done. Use --notest to finally rename the files.\n" unless ($opt_notest);
+}
 
 #####
 ## subs
@@ -339,9 +356,18 @@ sub get_dir_base_change() {
 sub renameit() {
 	my $oldfile=shift;
 	my $newname=shift;
+	my $cmd;
 	$newname=encode_utf8($newname) if ($to_is_utf8);
-	&print_ask ("mv \"". &$from_print($dir.$oldfile)."\"\t\"".&$to_print($dir.$newname)."\"") or return;
-	if (-e $newname) {
+	if ($opt_exec) {
+				$cmd = $opt_exec;
+				$cmd =~ s/\#2/7f8d9hqoäd\#2/g; # make the #2 unique so that file names may contain "#2"
+				$cmd =~ s/\#1/\Q$oldfile\E/g;
+				$cmd =~ s/7f8d9hqoäd\#2/\Q$newname\E/g;
+				print "$cmd\n";
+	} else {
+		&print_ask ("mv \"". &$from_print($dir.$oldfile)."\"\t\"".&$to_print($dir.$newname)."\"") or return;
+	}
+	if (-e $newname and !$opt_exec) {
 		if ($opt_replace and !&compare($oldfile,$newname)) {
 			if ($opt_notest) {
 				unlink $newname or print STDERR $!;
@@ -352,7 +378,11 @@ sub renameit() {
 		}
 	} else {
 		if ($opt_notest) {
-			rename ($oldfile, $newname) or print $!;
+			if ($opt_exec) {
+				system($cmd);
+			} else {
+				rename ($oldfile, $newname) or print $!;
+			}
 		}
 	}
 }
@@ -384,7 +414,7 @@ sub checkenc() {
 
 sub printusage {
 	print <<END;
-convmv 1.03 - converts filenames from one encoding to another
+convmv 1.04 - converts filenames from one encoding to another
 Copyright (C) 2003 Bjoern Jacke <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -400,7 +430,9 @@ the Free Software Foundation.
 --nfd     target files will be normalization form D for UTF-8 (OS X etc.)
 --qfrom   be quiet about the "from" of a rename (if it screws up your terminal e.g.)
 --qto     be quiet about the "to" of a rename (if it screws up your terminal e.g.)
+--exec c  execute command instead of rename (use #1 and #2 and see man page)
 --list    list all available encoding
+--lowmem  keep memory footprint low (see man page)
 --nosmart ignore if files already seem to be UTF-8 and convert is posible
 --notest  acually do rename the files
 --replace will replace files if they are equal

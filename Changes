@@ -1,3 +1,6 @@
+1.04
+- add --exec option to allow arbitrary operations
+
 1.03
 - add --lowmem option to keep memory footprint low when millions of files are being converted. However this will deactivate symlink target checks.
 - add Samba issues to documentation
