@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# convmv 1.01 - converts filenames from one encoding to another
+# convmv 1.02 - converts filenames from one encoding to another
 # Copyright © 2003 Bjoern Jacke <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -32,6 +32,10 @@ specify the encoding to which the filename(s) should be converted
 =item B<-i>
 
 interactive mode (ask y/n for each action)
+
+=item B<-r>
+
+recursively go through directories
 
 =item B<--nfc>
 
@@ -135,9 +139,11 @@ Send mail to bjoern [at] j3e.de for bug reports and suggestions.
 
 =cut
 
-require 5.8.0;
+require 5.008;
 use Getopt::Long;
 use File::Find;
+use File::Basename;
+use Cwd;
 use Encode 'from_to','encode_utf8','decode_utf8';
 use Unicode::Normalize;
 use utf8;
@@ -151,6 +157,7 @@ GetOptions	('nfc'=>\$opt_nfc,
 		'nfd'=>\$opt_nfd,
 		'f=s'=>\$opt_f,
 		't=s'=>\$opt_t,
+		'r'=>\$opt_r,
 		'i'=>\$opt_i,
 		'list'=>\$opt_list,
 		'help'=>\$opt_help,
@@ -159,7 +166,7 @@ GetOptions	('nfc'=>\$opt_nfc,
 		'qto'=>\$opt_qto,
 		'replace'=>\$opt_replace,
 		'nosmart'=>\$opt_nosmart,
-		);
+		) or exit 1;
 use File::Compare;
 
 &listvalidencodings and exit 0 if ($opt_list);
@@ -183,92 +190,107 @@ if ($opt_qto) {
 
 if ($opt_nfc) {
 	$norm=\&NFC;
-	die "NFC reqires UTF-8 as taget charset\n" unless ($to_is_utf8);
+	die "NFC reqires UTF-8 as target charset\n" unless ($to_is_utf8);
 } elsif ($opt_nfd) {
 	$norm=\&NFD;
-	die "NFD reqires UTF-8 as taget charset\n" unless ($to_is_utf8);
+	die "NFD reqires UTF-8 as target charset\n" unless ($to_is_utf8);
 } else {
 	$norm=\&dummy;
 }
 
+$pwd=cwd();
 @args=@ARGV;
 undef @ARGV;
 
-# scan for real files and check charset first:
-find({wanted=>\&scan,bydepth=>1}, @args);
-sub scan {
-	sub checkenc() {
-		my $new=shift;
-		$new=encode_utf8(NFC(decode_utf8($new))) if ($from_is_utf8 and ! $to_is_utf8);
-		my $oldfile=$new;
-		if (! from_to($new, $opt_f, $opt_t)) {
-			print STDERR "conversion error, no suitable charset used?$new: \"$File::Find::name\"\n";
-			$errors_occured=1;
-		} elsif (! from_to($new, $opt_t, $opt_f)) {
-			print STDERR "back-conversion error, no suitable charset used?: \"$File::Find::name\"\n";
-			$errors_occured=1;
-		} elsif ($new ne $oldfile) {
-			print STDERR "$opt_t doesn't cover all needed characters for: \"$File::Find::name\"\n";
-			$errors_occured=1;
-		}
-	}
-	if (-l) {
-#		print "link: $File::Find::name $_ in $File::Find::dir\n";
-		&checkenc($_);
-	} elsif (-d) {
-#		print "dir: $File::Find::name $_ in $File::Find::dir\n";
-		$inod_fullname{(stat $_)[1]}=$File::Find::name;
-		&checkenc($_);
-	} elsif (-f) {
-#		print "file: $File::Find::name $_ in $File::Find::dir\n";
-		$inod_fullname{(stat $_)[1]}=$File::Find::name;
-		&checkenc($_);
-	}
+for (@args) {
+	die "file or directory not found: $_\n" unless (-e);
 }
-die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occured);
+
+## do {print ord($_)."_" for (split(//,$_));print "\n"; } for (@args); # debug print
+
+if ($opt_r) {
+	find({wanted=>\&scan,bydepth=>1,no_chdir=>1}, @args);
+	die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occured);
+	find({wanted=>\&process_symlink_targets,bydepth=>1,no_chdir=>1}, @args);
+	find({wanted=>\&process_main,bydepth=>1,no_chdir=>1}, @args);
+} else {
+	for my $a (@args) { &scan($a); }
+	die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occured);
+	for my $a (@args) { &process_symlink_targets($a); }
+	for my $a (@args) { &process_main($a); }
+}
+
+print STDERR "No changes to your files done. Use --notest to finally rename the files.\n" unless ($opt_notest);
+
+#####
+## subs
+###
+
+# scan for real files and check charset first:
+sub scan {
+	$arg=shift or $arg=$_;
+	&get_dir_base_change;
+	if (-l $arg) {
+#		print "link: $arg in $dir\n";
+		&checkenc($arg);
+	} elsif (-d $arg) {
+#		print "dir: $arg in $dir\n";
+		$inod_fullname{(stat $arg)[1]}=$dir.$arg;
+		&checkenc($arg);
+	} elsif (-f $arg) {
+#		print "file: $arg in $dir\n";
+		$inod_fullname{(stat $arg)[1]}=$dir.$arg;
+		&checkenc($arg);
+	}
+	chdir $pwd;
+}
 
 # move symlink targets:
-find({wanted=>\&process_symlink_targets,bydepth=>1}, @args);
 sub process_symlink_targets {
+	$arg=shift or $arg=$_;
+	&get_dir_base_change;
 	if (-l) {
-		$oldlink=readlink $_;
+		$oldlink=readlink $arg;
 		if ((-f $oldlink or -d $oldlink) and $newname=&get_newname($oldlink)) {
-			if ( &$norm($newname) ne $oldlink ) {
+			if ( $newname ne $oldlink ) {
 				if ( $inod_fullname{(stat $oldlink)[1]}) { # = if (symlink target scanned before)
-					&print_ask ("symlink \"".&$from_print($File::Find::name)."\": \"".&$from_print($oldlink)."\" >> \"".&$to_print(&$norm($newname))."\"") or return;
+					&print_ask ("symlink \"".&$from_print($File::Find::name)."\": \"".&$from_print($oldlink)."\" >> \"".&$to_print($newname)."\"") or return;
 					if ($opt_notest) {
-						unlink $_;
-						symlink (&$norm($newname), $_);
+						unlink $arg;
+						symlink ($newname, $arg);
 					}
 				} else {
-					print STDERR "link target \"",&$from_print($oldlink),"\" of \"",&$from_print("$File::Find::dir/$_"),"\" not in subtree, left untouched!\n";
+					print STDERR "link target \"",&$from_print($oldlink),"\" of \"",&$from_print($dir.$arg),"\" not in subtree, left untouched!\n";
 				}
 			} else { print "no need to convert link target: $oldlink to $newname\n";
 			}
 		}
 	}
+	chdir $pwd;
 }
+
 # do the changes to all the real files/dirs/links:
-find({wanted=>\&process_main,bydepth=>1}, @args);
 sub process_main {
-	if (-l) {
+	$arg=shift or $arg=$_;
+	&get_dir_base_change;
+	if (-l $arg) {
 #		$type="symlink";
-		$newname=&get_newname($_) and &renameit($_,$newname);
-	} elsif (-d) {
+		$newname=&get_newname($arg) and &renameit($arg,$newname);
+	} elsif (-d $arg) {
 #		$type="directory";
-		$newname=&get_newname($_) and &renameit($_,$newname);
-	} elsif (-f) {
+		$newname=&get_newname($arg) and &renameit($arg,$newname);
+	} elsif (-f $arg) {
 #		$type="file";
-		$newname=&get_newname($_) and &renameit($_,$newname);
+		$newname=&get_newname($arg) and &renameit($arg,$newname);
 	}
+	chdir $pwd;
 }
 
 sub get_newname {
-	$dir=$File::Find::dir;
 	my $oldfile=shift;
 	my $newname;
 	if (!$from_is_utf8 and $to_is_utf8 and !$opt_nosmart and &looks_like_utf8($oldfile)) {
-		print STDERR "Skipping, already UTF-8: $dir/$oldfile\n";
+		print STDERR "Skipping, already UTF-8: $dir$oldfile\n";
 		return 0;
 	} else {
 		if ($from_is_utf8 and ! $to_is_utf8) {
@@ -278,8 +300,8 @@ sub get_newname {
 			$newname=$oldfile;
 		}
 		from_to($newname, $opt_f, $opt_t) or die "SHOULD NOT HAPPEN HERE: conversion error, so suitable charset used?: \"$oldfile\"\nTo prevent damage to your files, we won't continue. First fix this!\n";
-		$newname=decode_utf8($newname) if ($to_is_utf8);
-		if ( &$norm($newname) ne $oldfile ) {
+		$newname=&$norm(decode_utf8($newname)) if ($to_is_utf8);
+		if ( $newname ne $oldfile ) {
 			return $newname;
 		} else {
 			return 0;
@@ -288,12 +310,18 @@ sub get_newname {
 	
 }
 
+sub get_dir_base_change() {
+	$arg =~ s/\/*$//;
+	$dir=dirname($arg)."/";
+	$arg=basename($arg);
+	chdir $dir;
+}
+
 sub renameit() {
 	my $oldfile=shift;
 	my $newname=shift;
-	$newname=&$norm($newname);
 	$newname=encode_utf8($newname) if ($to_is_utf8);
-	&print_ask ("mv \"". &$from_print("$dir/$oldfile")."\"\t\"".&$to_print("$dir/$newname")."\"") or return;
+	&print_ask ("mv \"". &$from_print($dir.$oldfile)."\"\t\"".&$to_print($dir.$newname)."\"") or return;
 	if (-e $newname) {
 		if ($opt_replace and !&compare($oldfile,$newname)) {
 			if ($opt_notest) {
@@ -315,9 +343,29 @@ sub listvalidencodings() {
 	return 1;
 }
 
+sub checkenc() {
+	my $new=shift;
+	$new=encode_utf8(NFC(decode_utf8($new))) if ($from_is_utf8 and ! $to_is_utf8);
+	my $oldfile=$new;
+	if (! from_to($new, $opt_f, $opt_t,'')) {
+		print STDERR "conversion error, no suitable charset used?: \"$dir$oldfile\"\n";
+		$errors_occured=1;
+		return 0;
+	} elsif (! from_to($new, $opt_t, $opt_f,'')) {
+		print STDERR "back-conversion error, no suitable charset used?: \"$dir$oldfile\"\n";
+		$errors_occured=1;
+		return 0;
+	} elsif ($new ne $oldfile) {
+		print STDERR "$opt_t doesn't cover all needed characters for: \"$dir$oldfile\"\nAnother reason might be the file was not validly encoded in $opt_f.\n";
+		$errors_occured=1;
+		return 0;
+	}
+	return 1;
+}
+
 sub printusage {
 	print <<END;
-convmv 1.01 - converts filenames from one encoding to another
+convmv 1.02 - converts filenames from one encoding to another
 Copyright (C) 2003 Bjoern Jacke <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -327,6 +375,7 @@ the Free Software Foundation.
  USAGE: convmv [options] FILE(S)
 -f enc    encoding *from* which should to converted
 -t enc    encoding *to* which should to converted
+-r        recursively go through directories
 -i        interactive mode (ask for each action)
 --nfc     target files will be normalization form C for UTF-8 (Linux etc.)
 --nfd     target files will be normalization form D for UTF-8 (OS X etc.)
@@ -371,5 +420,3 @@ sub print_ask() {
 		return 1;
 	}
 }
-
-print STDERR "No changes to your files done. Use --notest to finally rename the files.\n" unless ($opt_notest);

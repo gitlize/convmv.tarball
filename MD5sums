@@ -2,16 +2,15 @@
 Hash: SHA1
 
 e0dc2bf8cde8e56d69cef5d30c702da3  ./GPL2
-6d5bb9c3c16c92c146c82cf6a6e0ff99  ./Makefile
-ecceee21c68657c3c6aac19f2b7c1b8d  ./.name
-415a42c7fcbf045e1ab6639573b8fafe  ./Changes
-54a8b425d9ac4dc316b721cb465a3612  ./convmv
-87e6cc8bd0337619df0dfc14b3f7a8e1  ./VERSION
-561ca417627c643be3ee989b6cec3e3a  ./.files
+f4778040f7e79de302c53372aef0ee91  ./Makefile
+30a2794ee37047d2988404677afa30df  ./Changes
+9d5b51493b1bf21d24fe9591b83a1df8  ./convmv
+d4c8eff68233fc004330b2c428968dbb  ./VERSION
+24ad1368908627ba3c65b8084e5e1bf1  ./CREDITS
 -----BEGIN PGP SIGNATURE-----
 Version: GnuPG v1.2.2-rc1-SuSE (GNU/Linux)
 
-iD8DBQE+vd58doo0s+hIejkRAnH0AJ9auuA0BB8FidBJ0ESIp0ODZCbEbgCghfZE
-Nps3BQrROBajdDOmbmbMSis=
-=S4G1
+iD8DBQE+/tbtdoo0s+hIejkRAlsQAKCkeBdg3zwNwazlQdYgf1AnRC4JGQCgtrlG
+NjetCBecLTsFVDRgACnz+rg=
+=y+7r
 -----END PGP SIGNATURE-----

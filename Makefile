@@ -11,7 +11,7 @@ manpage:
 	pod2man --section 1 --center=" " convmv | gzip > convmv.1.gz
 
 clean:
-	rm -f convmv.1.gz convmv-*.tar.gz MD5sums
+	rm -f convmv.1.gz convmv-*.tar.gz MD5sums .files .name
 
 dist: clean
 	sed -n "2,2p" convmv |sed "s/.*convmv \([^ ]*\).*/\1/" > VERSION
