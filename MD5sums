@@ -1,19 +1,19 @@
 -----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA1
 
-6e9c23754cdaae8d2a192ec9f8cfc16a  ./Changes
+ca03d47a6f4584405e2ce2c7f36b6c40  ./Changes
 d41d8cd98f00b204e9800998ecf8427e  ./.MD5sums
-8f64b7d1516b0dbe29ed3ab048f6792a  ./convmv
-24ad1368908627ba3c65b8084e5e1bf1  ./CREDITS
+6a7176498af1365b1daf1fe9499b46f1  ./convmv
+0e0b56efb50933936e1fa5ba068168b6  ./CREDITS
 e0dc2bf8cde8e56d69cef5d30c702da3  ./GPL2
 1e908fc18ee0c93c318f12dbcc0db519  ./Makefile
 d9d81b33b81ce3e2547db478e9076ba2  ./testsuite.tar
 e1d1466e0da758f898563b9fbee88306  ./TODO
-2e6edb2ab3c5c369c49566b27db34269  ./VERSION
+4c48cde808febcb481f03520d9d9d8e3  ./VERSION
 -----BEGIN PGP SIGNATURE-----
-Version: GnuPG v1.0.7 (GNU/Linux)
+Version: GnuPG v1.2.2 (GNU/Linux)
 
-iD8DBQE/IUTQdoo0s+hIejkRAo4pAJ9MF3MaMt1hkmPmK4E4TWg+mnc+1wCgyZIm
-ns/FKEA7uJJM8bX9n8Xr0YY=
-=5zgG
+iD8DBQE/zm9Idoo0s+hIejkRAqSKAJ9+8wanyf+v0FzOPadkUoHXB93SpACdEYuf
+qKoLq739NQqHN2vmz/u9Af4=
+=8kkh
 -----END PGP SIGNATURE-----

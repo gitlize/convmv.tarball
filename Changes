@@ -1,3 +1,8 @@
+1.06
+- fix some typos and cosmetics
+- add missing from_print
+- rewrote checkenc(), no more false alarms now with "encodings" like MIME-Q, which can look quite different. As a side effect error messages became more detailed
+
 1.05
 - --qfrom/to also mask cntrl characters now
 - symlink printout splitted to get correct output

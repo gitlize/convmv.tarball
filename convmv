@@ -1,6 +1,6 @@
 #!/usr/bin/perl
-# convmv 1.05 - converts filenames from one encoding to another
-# Copyright © 2003 Bjoern Jacke <bjoern@j3e.de>
+# convmv 1.06 - converts filenames from one encoding to another
+# Copyright © 2003 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 # under the terms of the GNU General Public License version 2 as published by
@@ -57,6 +57,10 @@ does not affect rename operation itself.
 execute the given command. You have to quote the command and #1 will be
 substituted by the old, #2 by the new filename. Using this option link 
 targets will stay untouched.
+
+Example:
+
+convmv -f latin1 -t utf-8 -r --exec "echo #1 should be renamed to #2" directory
 
 =item B<--list>
 
@@ -126,7 +130,7 @@ converting that the other way round. The from-charset has to be UTF-8 and the
 to-charset has to be the from-charset you previously accidently used. You
 should check to get the correct results by doing the conversion without
 C<--notest> before, also the C<--qfrom> option might be helpful, because the
-double-encoded file names might screw up your terminal if they are being
+double utf-8 file names might screw up your terminal if they are being
 printed - they often contain control sequences which do funny things with your
 terminal window. If you are not sure about the charset which was accidently
 converted from, using C<--qfrom> is a good way to fiddle out the required
@@ -164,7 +168,7 @@ no bugs or fleas known
 
 =head1 AUTHOR
 
-Bjoern Jacke
+Bjoern JACKE
  
 Send mail to bjoern [at] j3e.de for bug reports and suggestions.
 
@@ -202,7 +206,8 @@ GetOptions	('nfc'=>\$opt_nfc,
 		'exec=s'=>\$opt_exec,
 		) or exit 1;
 use File::Compare;
-$maxfilelength=255;
+$maxfilenamelength=255;
+# $maxpathlength=4096; # this might be used somehow, somewhere?
 
 &listvalidencodings and exit 0 if ($opt_list);
 &printusage and exit 1 if (!@ARGV or $opt_help);
@@ -225,10 +230,10 @@ if ($opt_qto) {
 
 if ($opt_nfc) {
 	$norm=\&NFC;
-	die "NFC reqires UTF-8 as target charset\n" unless ($to_is_utf8);
+	die "NFC requires UTF-8 as target charset\n" unless ($to_is_utf8);
 } elsif ($opt_nfd) {
 	$norm=\&NFD;
-	die "NFD reqires UTF-8 as target charset\n" unless ($to_is_utf8);
+	die "NFD requires UTF-8 as target charset\n" unless ($to_is_utf8);
 } else {
 	$norm=\&dummy;
 }
@@ -260,7 +265,7 @@ if ($opt_r) {
 if ($opt_notest) {
 	print STDERR "Ready!\n",
 } else {
-	print STDERR "No changes to your files done. Use --notest to finally rename the files.\n" unless ($opt_notest);
+	print STDERR "No changes to your files done. Use --notest to finally rename the files.\n";
 }
 
 #####
@@ -335,7 +340,7 @@ sub get_newname {
 	my $oldfile=shift;
 	my $newname;
 	if (!$from_is_utf8 and $to_is_utf8 and !$opt_nosmart and &looks_like_utf8($oldfile)) {
-		print STDERR "Skipping, already UTF-8: $dir$oldfile\n";
+		print STDERR "Skipping, already UTF-8: ",&$from_print($dir.$oldfile),"\n";
 		return 0;
 	} else {
 		if ($from_is_utf8 and ! $to_is_utf8) {
@@ -344,7 +349,7 @@ sub get_newname {
 		} else {
 			$newname=$oldfile;
 		}
-		from_to($newname, $opt_f, $opt_t) or die "SHOULD NOT HAPPEN HERE: conversion error, so suitable charset used?: \"$oldfile\"\nTo prevent damage to your files, we won't continue. First fix this!\n";
+		from_to($newname, $opt_f, $opt_t, Encode::FB_QUIET) or die "SHOULD NOT HAPPEN HERE: conversion error, so suitable charset used?: \"$oldfile\"\nTo prevent damage to your files, we won't continue. First fix this!\n";
 		$newname=&$norm(decode_utf8($newname)) if ($to_is_utf8);
 		if ( $newname ne $oldfile ) {
 			return $newname;
@@ -381,8 +386,8 @@ sub renameit() {
 	if (-e $newname and !$opt_exec) {
 		if ($opt_replace and !&compare($oldfile,$newname)) {
 			if ($opt_notest) {
-				unlink $newname or print STDERR $!;
-				rename ($oldfile, $newname) or print STDERR $!;
+				unlink $newname or print STDERR "Error: $!\n";
+				rename ($oldfile, $newname) or print STDERR "Error: $!\n";
 			}
 		} else {
 			print STDERR &$to_print($newname)," exists and differs or --replace option missing - skipped\n";
@@ -392,7 +397,7 @@ sub renameit() {
 			if ($opt_exec) {
 				system($cmd);
 			} else {
-				rename ($oldfile, $newname) or print $!;
+				rename ($oldfile, $newname) or print STDERR "Error: $!\n";
 			}
 		}
 	}
@@ -404,21 +409,34 @@ sub listvalidencodings() {
 }
 
 sub checkenc() {
-	my $new=shift;
-	$new=encode_utf8(NFC(decode_utf8($new))) if ($from_is_utf8 and ! $to_is_utf8 and decode_utf8($new));
-	my $oldfile=$new;
-	my $filelength=from_to($new, $opt_f, $opt_t,'');
-	if (!$filelength) {
-		print STDERR "conversion error, no suitable charset used?: \"". &$from_print($dir.$oldfile) ."\"\n";
+	my $oldfile=shift;
+	my $new=$oldfile;
+	if ($from_is_utf8) {
+		if (! decode_utf8($new)) {
+			print STDERR "this file was not validly encoded in UTF-8: \"". &$from_print($dir.$oldfile) ."\"\n";
+			return 0;
+		}
+	} else {
+		if (! from_to($new,$opt_f, "utf8", Encode::FB_QUIET) ) {
+			print STDERR "this file was not validly encoded in $opt_f: \"". &$from_print($dir.$oldfile) ."\"\n";
+			return 0;
+		}
+	}
+	# $new is utf-8 now and $oldfile's encoding was valid ...
+	my $filenamelength;
+	if ($to_is_utf8) {
+		$new = &$norm($new);
+		$filenamelength=length($new);
+	} else {
+		$new=encode_utf8(NFC(decode_utf8($new)));
+		$filenamelength=from_to($new, "utf8", $opt_t, Encode::FB_QUIET);
+	}
+##	print "$oldfile|$utf8oldfile|$new|$filenamelength\n";
+	if (! $filenamelength) {
+		print STDERR "$opt_t doesn't cover all needed characters for: \"". &$from_print($dir.$oldfile) ."\"\n";
 		return 0;
-	} elsif (! from_to($new, $opt_t, $opt_f,'')) {
-		print STDERR "back-conversion error, no suitable charset used?: \"". &$from_print($dir.$oldfile) ."\"\n";
-		return 0;
-	} elsif ($new ne $oldfile) {
-		print STDERR "$opt_t doesn't cover all needed characters for: \"". &$from_print($dir.$oldfile) ."\"\nAnother reason might be the file was not validly encoded in $opt_f.\n";
-		return 0;
-	} elsif ($filelength > $maxfilelength) {
-		print STDERR &$from_print($dir.$oldfile).": resulting filename is $filelength bytes long (max:: $maxfilelength)\n";
+	} elsif ($filenamelength > $maxfilenamelength) {
+		print STDERR &$from_print($dir.$oldfile).": resulting filename is $filenamelength bytes long (max: $maxfilenamelength)\n";
 		return 0;
 	}
 	return 1;
@@ -426,8 +444,8 @@ sub checkenc() {
 
 sub printusage {
 	print <<END;
-convmv 1.05 - converts filenames from one encoding to another
-Copyright (C) 2003 Bjoern Jacke <bjoern\@j3e.de>
+convmv 1.06 - converts filenames from one encoding to another
+Copyright (C) 2003 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 under the terms of the GNU General Public License version 2 as published by
@@ -443,10 +461,10 @@ the Free Software Foundation.
 --qfrom   be quiet about the "from" of a rename (if it screws up your terminal e.g.)
 --qto     be quiet about the "to" of a rename (if it screws up your terminal e.g.)
 --exec c  execute command instead of rename (use #1 and #2 and see man page)
---list    list all available encoding
+--list    list all available encodings
 --lowmem  keep memory footprint low (see man page)
---nosmart ignore if files already seem to be UTF-8 and convert is posible
---notest  acually do rename the files
+--nosmart ignore if files already seem to be UTF-8 and convert if posible
+--notest  actually do rename the files
 --replace will replace files if they are equal
 --help    print this help
 END
