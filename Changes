@@ -1,3 +1,8 @@
+1.03
+- add --lowmem option to keep memory footprint low when millions of files are being converted. However this will deactivate symlink target checks.
+- add Samba issues to documentation
+- suppress normalization error messages in cases of invalid UTF-8 in checkenc()
+
 1.02
 - make default behaviour to not work recursively so we can convert a single directory, use -r to get the old (recursive) mode
 - work around find() oddity, which doesn't process directories from @ARGV

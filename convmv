@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# convmv 1.02 - converts filenames from one encoding to another
+# convmv 1.03 - converts filenames from one encoding to another
 # Copyright © 2003 Bjoern Jacke <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -62,6 +62,10 @@ This will in fact do nothing else than replace any non-ASCII character
 list all available encodings. To get support for more Chinese or Japanese
 encodings install the HanExtra or JIS2K Encode packages.
 
+=item B<--lowmem>
+
+keep memory footprint low by not creating a hash of all files. This disables checking if symlink targets are in subtree. Symlink target pointers will be converted regardlessly. If you convert multiple hundredthousands or millions of files the memory usage of convmv might grow quite high. This option would help you out in that case.
+
 =item B<--nosmart>
 
 by default convmv will detect if a filename is already UTF8 encoded and will
@@ -123,13 +127,27 @@ terminal window. If you are not sure about the charset which was accidently
 converted from, using --qfrom is a good way to fiddle out the required encoding
 without destroying the file names finally.
 
+=head2 How to repair Samba files
+
+When in the smb.conf (of Samba 2.x) there hasn't been set a correct "character
+set" variable, files which are created from Win* clients are being created in
+the client's codepage, e.g. cp850 for western european languages. As a result
+of that the files which contain non-acsii characters are screwed up if you "ls"
+them on the Unix server. If you change the "character set" variable afterwards
+to iso8859-1, newly created files are okay, but the old files are still screwed
+up in the Windows encoding. In this case convmv can also be used to convert the
+old Samba-shared files from cp850 to iso8859-1.
+
+By the way: Samba 3.x finally maps to UTF-8 filenames by default, so also when
+you migrate from Samba 2 to Samba 3 you might have to convert your file names.
+
 =head1 SEE ALSO
 
 L<locale(1)> L<utf-8(7)> L<charsets(7)>
 
 =head1 BUGS
 
-eh?
+no bugs or fleas known
 
 =head1 AUTHOR
 
@@ -166,6 +184,7 @@ GetOptions	('nfc'=>\$opt_nfc,
 		'qto'=>\$opt_qto,
 		'replace'=>\$opt_replace,
 		'nosmart'=>\$opt_nosmart,
+		'lowmem'=>\$opt_lowmem,
 		) or exit 1;
 use File::Compare;
 
@@ -235,11 +254,11 @@ sub scan {
 		&checkenc($arg);
 	} elsif (-d $arg) {
 #		print "dir: $arg in $dir\n";
-		$inod_fullname{(stat $arg)[1]}=$dir.$arg;
+		$inod_fullname{(stat $arg)[1]}=$dir.$arg if (!$opt_lowmem);
 		&checkenc($arg);
 	} elsif (-f $arg) {
 #		print "file: $arg in $dir\n";
-		$inod_fullname{(stat $arg)[1]}=$dir.$arg;
+		$inod_fullname{(stat $arg)[1]}=$dir.$arg if (!$opt_lowmem);
 		&checkenc($arg);
 	}
 	chdir $pwd;
@@ -253,7 +272,7 @@ sub process_symlink_targets {
 		$oldlink=readlink $arg;
 		if ((-f $oldlink or -d $oldlink) and $newname=&get_newname($oldlink)) {
 			if ( $newname ne $oldlink ) {
-				if ( $inod_fullname{(stat $oldlink)[1]}) { # = if (symlink target scanned before)
+				if ( $inod_fullname{(stat $oldlink)[1]} or $opt_lowmem) { # = if (symlink target scanned before)
 					&print_ask ("symlink \"".&$from_print($File::Find::name)."\": \"".&$from_print($oldlink)."\" >> \"".&$to_print($newname)."\"") or return;
 					if ($opt_notest) {
 						unlink $arg;
@@ -345,18 +364,18 @@ sub listvalidencodings() {
 
 sub checkenc() {
 	my $new=shift;
-	$new=encode_utf8(NFC(decode_utf8($new))) if ($from_is_utf8 and ! $to_is_utf8);
+	$new=encode_utf8(NFC(decode_utf8($new))) if ($from_is_utf8 and ! $to_is_utf8 and decode_utf8($new));
 	my $oldfile=$new;
 	if (! from_to($new, $opt_f, $opt_t,'')) {
-		print STDERR "conversion error, no suitable charset used?: \"$dir$oldfile\"\n";
+		print STDERR "conversion error, no suitable charset used?: \"". &$from_print($dir.$oldfile) ."\"\n";
 		$errors_occured=1;
 		return 0;
 	} elsif (! from_to($new, $opt_t, $opt_f,'')) {
-		print STDERR "back-conversion error, no suitable charset used?: \"$dir$oldfile\"\n";
+		print STDERR "back-conversion error, no suitable charset used?: \"". &$from_print($dir.$oldfile) ."\"\n";
 		$errors_occured=1;
 		return 0;
 	} elsif ($new ne $oldfile) {
-		print STDERR "$opt_t doesn't cover all needed characters for: \"$dir$oldfile\"\nAnother reason might be the file was not validly encoded in $opt_f.\n";
+		print STDERR "$opt_t doesn't cover all needed characters for: \"". &$from_print($dir.$oldfile) ."\"\nAnother reason might be the file was not validly encoded in $opt_f.\n";
 		$errors_occured=1;
 		return 0;
 	}
@@ -365,7 +384,7 @@ sub checkenc() {
 
 sub printusage {
 	print <<END;
-convmv 1.02 - converts filenames from one encoding to another
+convmv 1.03 - converts filenames from one encoding to another
 Copyright (C) 2003 Bjoern Jacke <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -383,7 +402,7 @@ the Free Software Foundation.
 --qto     be quiet about the "to" of a rename (if it screws up your terminal e.g.)
 --list    list all available encoding
 --nosmart ignore if files already seem to be UTF-8 and convert is posible
---notest  just print out to stdout what will be done
+--notest  acually do rename the files
 --replace will replace files if they are equal
 --help    print this help
 END

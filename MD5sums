@@ -1,16 +1,17 @@
 -----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA1
 
-e0dc2bf8cde8e56d69cef5d30c702da3  ./GPL2
-f4778040f7e79de302c53372aef0ee91  ./Makefile
-30a2794ee37047d2988404677afa30df  ./Changes
-9d5b51493b1bf21d24fe9591b83a1df8  ./convmv
-d4c8eff68233fc004330b2c428968dbb  ./VERSION
+d41d8cd98f00b204e9800998ecf8427e  ./.MD5sums
+7627fdf8c13b4d335a5eb36e41866e7e  ./Changes
+7856b62bce33eb717865f89f42ec3079  ./convmv
 24ad1368908627ba3c65b8084e5e1bf1  ./CREDITS
+e0dc2bf8cde8e56d69cef5d30c702da3  ./GPL2
+d70ae1b3fc97f62c003ccdd9fa031f2c  ./Makefile
+b14f8b88c69f7a7eaa6fd55fd207266d  ./VERSION
 -----BEGIN PGP SIGNATURE-----
-Version: GnuPG v1.2.2-rc1-SuSE (GNU/Linux)
+Version: GnuPG v1.0.7 (GNU/Linux)
 
-iD8DBQE+/tbtdoo0s+hIejkRAlsQAKCkeBdg3zwNwazlQdYgf1AnRC4JGQCgtrlG
-NjetCBecLTsFVDRgACnz+rg=
-=y+7r
+iD8DBQE/EXXbdoo0s+hIejkRAhNGAJ9lgc/w9CIFFr/8H+IF0v3kwc6ppQCgmzEl
+zo0w8IEJS45XmNEotSwrEpg=
+=VG0K
 -----END PGP SIGNATURE-----

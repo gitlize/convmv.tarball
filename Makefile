@@ -1,11 +1,14 @@
-DESTDIR=/usr/local
-MANPATH=$(DESTDIR)/share/man
+DESTDIR=
+PREFIX=/usr
+MANDIR=$(PREFIX)/share/man
 
 all: manpage
 
 install: all
-	cp convmv.1.gz $(MANPATH)/man1/
-	install -m 755 convmv $(DESTDIR)/bin/
+	mkdir -p $(DESTDIR)$(MANDIR)/man1/
+	mkdir -p $(DESTDIR)$(PREFIX)/bin/
+	cp convmv.1.gz $(DESTDIR)$(PREFIX)$(MANDIR)/man1/
+	install -m 755 convmv $(DESTDIR)$(PREFIX)/bin/
 
 manpage:
 	pod2man --section 1 --center=" " convmv | gzip > convmv.1.gz
