@@ -1,0 +1,17 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA1
+
+e0dc2bf8cde8e56d69cef5d30c702da3  ./GPL2
+6d5bb9c3c16c92c146c82cf6a6e0ff99  ./Makefile
+ecceee21c68657c3c6aac19f2b7c1b8d  ./.name
+415a42c7fcbf045e1ab6639573b8fafe  ./Changes
+54a8b425d9ac4dc316b721cb465a3612  ./convmv
+87e6cc8bd0337619df0dfc14b3f7a8e1  ./VERSION
+561ca417627c643be3ee989b6cec3e3a  ./.files
+-----BEGIN PGP SIGNATURE-----
+Version: GnuPG v1.2.2-rc1-SuSE (GNU/Linux)
+
+iD8DBQE+vd58doo0s+hIejkRAnH0AJ9auuA0BB8FidBJ0ESIp0ODZCbEbgCghfZE
+Nps3BQrROBajdDOmbmbMSis=
+=S4G1
+-----END PGP SIGNATURE-----

@@ -1,0 +1,10 @@
+1.01
+- documentation updates
+- check if symlink target is -f or -d, we run into problems in /proc otherwise.
+- implement interactive (-i) mode
+
+1.0
+- UTF-8 smartness added
+
+0.3
+- first stable release
