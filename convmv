@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# convmv 1.06 - converts filenames from one encoding to another
+# convmv 1.07 - converts filenames from one encoding to another
 # Copyright © 2003 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -60,7 +60,7 @@ targets will stay untouched.
 
 Example:
 
-convmv -f latin1 -t utf-8 -r --exec "echo #1 should be renamed to #2" directory
+convmv -f latin1 -t utf-8 -r --exec "echo #1 should be renamed to #2" path/to/files
 
 =item B<--list>
 
@@ -92,9 +92,32 @@ wants to do.
 if the file to which shall be renamed already exists, it will be overwritten if
 the other file content is equal.
 
+=item B<--unescape>
+
+this option will remove this ugly % hex sequences from filenames and turn them
+into (hopefully) nicer 8-bit characters. After --unescape you might want to do
+a charset conversion. This sequences like %20 etc. are sometimes produced when
+downloading via http or ftp.
+
+=item B<--upper> , B<--lower>
+
+turn filenames into all upper or all lower case. When the file is not
+ASCII-encoded, convmv expects a charset to be entered via the -f switch.
+
+=item B<--dotlessi>
+
+care about the dotless i/I issue. A lowercase version of "I" will also be
+dotless while an uppercase version of "i" will also be dotted. This is an
+issue for Lithuanian, Turkish and Azeri.
+
+By the way: The superscript dot of the letter i was added in the Middle Ages to
+distinguish the letter (in manuscripts) from adjacent vertical strokes in such
+letters as u, m, and n. J is a variant form of i which emerged at this time and
+subsequently became a separate letter.
+
 =item B<--help>
 
-print this help
+print a short summary of available options
 
 =back
 
@@ -179,8 +202,8 @@ use Getopt::Long;
 use File::Find;
 use File::Basename;
 use Cwd;
-use Encode 'from_to','encode_utf8','decode_utf8';
-use Encode 'is_utf8';
+use Encode 'from_to','encode_utf8','decode_utf8','_utf8_on','_utf8_off';
+#use Encode 'is_utf8';
 use Unicode::Normalize;
 use utf8;
 use bytes;
@@ -204,18 +227,37 @@ GetOptions	('nfc'=>\$opt_nfc,
 		'nosmart'=>\$opt_nosmart,
 		'lowmem'=>\$opt_lowmem,
 		'exec=s'=>\$opt_exec,
+		'unescape'=>\$opt_unescape,
+		'upper'=>\$opt_upper,
+		'lower'=>\$opt_lower,
+		'dotlessi'=>\$opt_dotlessi,
 		) or exit 1;
 use File::Compare;
+$errors_occurred=0;
+$warnings_occurred=0;
 $maxfilenamelength=255;
 # $maxpathlength=4096; # this might be used somehow, somewhere?
 
 &listvalidencodings and exit 0 if ($opt_list);
 &printusage and exit 1 if (!@ARGV or $opt_help);
 
-$opt_f=Encode::resolve_alias($opt_f) or die "wrong/unknown \"from\" encoding!\n";
-$opt_t=Encode::resolve_alias($opt_t) or die "wrong/unknown \"to\" encoding!\n";
+if ($opt_unescape) {
+	die "No charset conversion when unescaping!\n" if ($opt_f or $opt_t);
+	$checkenc=\&unescape_checkenc;
+	$get_newname=\&unescape_get_newname;
+} elsif ($opt_upper xor $opt_lower) {
+	die "No charset conversion when uppering/lowering!\n" if ($opt_t);
+	$checkenc=\&upperlower_checkenc;
+	$get_newname=\&upperlower_get_newname;
+	$opt_f="ascii" unless ($opt_f);
+} else {
+	$opt_f=Encode::resolve_alias($opt_f) or die "wrong/unknown \"from\" encoding!\n";
+	$opt_t=Encode::resolve_alias($opt_t) or die "wrong/unknown \"to\" encoding!\n";
+	$to_is_utf8 = lc($opt_t) =~ m/^utf-?8$/;
+	$checkenc=\&char_checkenc;
+	$get_newname=\&char_get_newname;
+}
 $from_is_utf8 = lc($opt_f) =~ m/^utf-?8$/;
-$to_is_utf8 = lc($opt_t) =~ m/^utf-?8$/;
 
 if ($opt_qfrom) {
 	$from_print=\&to_ascii;
@@ -252,12 +294,14 @@ for (@args) {
 
 if ($opt_r) {
 	find({wanted=>\&scan,bydepth=>1,no_chdir=>1}, @args);
-	die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occured);
+	$errors_occurred=1 if ($warnings_occurred and not &print_ask ("WARNINGS occurred. Do you really want to continue?",1));
+	die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occurred);
 	find({wanted=>\&process_symlink_targets,bydepth=>1,no_chdir=>1}, @args) unless ($opt_exec);
 	find({wanted=>\&process_main,bydepth=>1,no_chdir=>1}, @args);
 } else {
 	for my $a (@args) { &scan($a); }
-	die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occured);
+	$errors_occurred=1 if ($warnings_occurred and not &print_ask ("WARNINGS occurred. Do you really want to continue?",1));
+	die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occurred);
 	unless ($opt_exec) { for my $a (@args) { &process_symlink_targets($a); } }
 	for my $a (@args) { &process_main($a); }
 }
@@ -278,15 +322,15 @@ sub scan {
 	&get_dir_base_change;
 	if (-l $arg) {
 #		print "link: $arg in $dir\n";
-		&checkenc($arg) or $errors_occured=1;
+		&$checkenc($arg) or $errors_occurred=1;
 	} elsif (-d $arg) {
 #		print "dir: $arg in $dir\n";
 		$inod_fullname{(stat $arg)[1]}=$dir.$arg if (!$opt_lowmem);
-		&checkenc($arg) or $errors_occured=1;
+		&$checkenc($arg) or $errors_occurred=1;
 	} elsif (-f $arg) {
 #		print "file: $arg in $dir\n";
 		$inod_fullname{(stat $arg)[1]}=$dir.$arg if (!$opt_lowmem);
-		&checkenc($arg) or $errors_occured=1;
+		&$checkenc($arg) or $errors_occurred=1;
 	}
 	chdir $pwd;
 }
@@ -297,14 +341,14 @@ sub process_symlink_targets {
 	&get_dir_base_change;
 	if (-l $arg) {
 		$oldlink=readlink $arg;
-		if ((-f $oldlink or -d $oldlink) and $newname=&get_newname($oldlink)) {
+		if ((-f $oldlink or -d $oldlink) and $newname=&$get_newname($oldlink)) {
 			if ( $newname ne $oldlink ) {
 				if ( $inod_fullname{(stat $oldlink)[1]} or $opt_lowmem) { # = if (symlink target scanned before)
 					#print is_utf8($oldlink) ? 1 : 0;
 					#print is_utf8($newname) ? 1 : 0;
 					print "symlink \"".&$from_print($File::Find::name)."\": \"";
 					print &$from_print($oldlink)."\" >> \"";
-					&print_ask (&$to_print($newname)."\"") or return;
+					&print_ask (&$to_print($newname)."\"",$opt_i) or return;
 					if ($opt_notest) {
 						unlink $arg;
 						symlink ($newname, $arg);
@@ -312,8 +356,7 @@ sub process_symlink_targets {
 				} else {
 					print STDERR "link target \"",&$from_print($oldlink),"\" of \"",&$from_print($dir.$arg),"\" not in subtree, left untouched!\n";
 				}
-			} else { print "no need to convert link target: $oldlink to $newname\n";
-			}
+			} # else { print "no need to convert link target: $oldlink to $newname\n"; }
 		}
 	}
 	chdir $pwd;
@@ -325,23 +368,33 @@ sub process_main {
 	&get_dir_base_change;
 	if (-l $arg) {
 #		$type="symlink";
-		$newname=&get_newname($arg) and &renameit($arg,$newname);
+		$newname=&$get_newname($arg);
+		if ($newname and $newname ne $arg) {
+			&renameit($arg,$newname);
+		}
 	} elsif (-d $arg) {
 #		$type="directory";
-		$newname=&get_newname($arg) and &renameit($arg,$newname);
+		$newname=&$get_newname($arg);
+		if ($newname and $newname ne $arg) {
+			&renameit($arg,$newname);
+		}
 	} elsif (-f $arg) {
 #		$type="file";
-		$newname=&get_newname($arg) and &renameit($arg,$newname);
+		$newname=&$get_newname($arg);
+		if ($newname and $newname ne $arg) {
+			&renameit($arg,$newname);
+		}
 	}
 	chdir $pwd;
 }
 
-sub get_newname {
+sub char_get_newname {
+# retuns 0 on error and string otherwise.
 	my $oldfile=shift;
 	my $newname;
 	if (!$from_is_utf8 and $to_is_utf8 and !$opt_nosmart and &looks_like_utf8($oldfile)) {
 		print STDERR "Skipping, already UTF-8: ",&$from_print($dir.$oldfile),"\n";
-		return 0;
+		return $oldfile;
 	} else {
 		if ($from_is_utf8 and ! $to_is_utf8) {
 			# from_to can't convert from NFD to non-UTF-8!
@@ -351,11 +404,7 @@ sub get_newname {
 		}
 		from_to($newname, $opt_f, $opt_t, Encode::FB_QUIET) or die "SHOULD NOT HAPPEN HERE: conversion error, so suitable charset used?: \"$oldfile\"\nTo prevent damage to your files, we won't continue. First fix this!\n";
 		$newname=&$norm(decode_utf8($newname)) if ($to_is_utf8);
-		if ( $newname ne $oldfile ) {
-			return $newname;
-		} else {
-			return 0;
-		}
+		return $newname;
 	}
 	
 }
@@ -374,14 +423,14 @@ sub renameit() {
 	$newname=encode_utf8($newname) if ($to_is_utf8);
 	if ($opt_exec) {
 				$cmd = $opt_exec;
-				$cmd =~ s/\#2/7f8d9hqoäd\#2/g; # make the #2 unique so that file names may contain "#2"
+				$cmd =~ s/\#2/\000f8d9hqoäd\#2/g; # make the #2 unique so that file names may contain "#2"
 				$cmd =~ s/\#1/\Q$oldfile\E/g;
-				$cmd =~ s/7f8d9hqoäd\#2/\Q$newname\E/g;
+				$cmd =~ s/\000f8d9hqoäd\#2/\Q$newname\E/g;
 				print "$cmd\n";
 	} else {
 		#print is_utf8($oldfile) ? 1 : 0;
 		#print is_utf8($newname) ? 1 : 0;
-		&print_ask ("mv \"". &$from_print($dir.$oldfile)."\"\t\"".&$from_print($dir).&$to_print($newname)."\"") or return;
+		&print_ask ("mv \"". &$from_print($dir.$oldfile)."\"\t\"".&$from_print($dir).&$to_print($newname)."\"",$opt_i) or return;
 	}
 	if (-e $newname and !$opt_exec) {
 		if ($opt_replace and !&compare($oldfile,$newname)) {
@@ -408,7 +457,7 @@ sub listvalidencodings() {
 	return 1;
 }
 
-sub checkenc() {
+sub char_checkenc() {
 	my $oldfile=shift;
 	my $new=$oldfile;
 	if ($from_is_utf8) {
@@ -439,12 +488,13 @@ sub checkenc() {
 		print STDERR &$from_print($dir.$oldfile).": resulting filename is $filenamelength bytes long (max: $maxfilenamelength)\n";
 		return 0;
 	}
+	&posix_check($new);
 	return 1;
 }
 
 sub printusage {
 	print <<END;
-convmv 1.06 - converts filenames from one encoding to another
+convmv 1.07 - converts filenames from one encoding to another
 Copyright (C) 2003 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -452,29 +502,35 @@ under the terms of the GNU General Public License version 2 as published by
 the Free Software Foundation.
 
  USAGE: convmv [options] FILE(S)
--f enc    encoding *from* which should to converted
--t enc    encoding *to* which should to converted
--r        recursively go through directories
--i        interactive mode (ask for each action)
---nfc     target files will be normalization form C for UTF-8 (Linux etc.)
---nfd     target files will be normalization form D for UTF-8 (OS X etc.)
---qfrom   be quiet about the "from" of a rename (if it screws up your terminal e.g.)
---qto     be quiet about the "to" of a rename (if it screws up your terminal e.g.)
---exec c  execute command instead of rename (use #1 and #2 and see man page)
---list    list all available encodings
---lowmem  keep memory footprint low (see man page)
---nosmart ignore if files already seem to be UTF-8 and convert if posible
---notest  actually do rename the files
---replace will replace files if they are equal
---help    print this help
+-f enc     encoding *from* which should to converted
+-t enc     encoding *to* which should to converted
+-r         recursively go through directories
+-i         interactive mode (ask for each action)
+--nfc      target files will be normalization form C for UTF-8 (Linux etc.)
+--nfd      target files will be normalization form D for UTF-8 (OS X etc.)
+--qfrom    be quiet about the "from" of a rename (if it screws up your terminal e.g.)
+--qto      be quiet about the "to" of a rename (if it screws up your terminal e.g.)
+--exec c   execute command instead of rename (use #1 and #2 and see man page)
+--list     list all available encodings
+--lowmem   keep memory footprint low (see man page)
+--nosmart  ignore if files already seem to be UTF-8 and convert if posible
+--notest   actually do rename the files
+--replace  will replace files if they are equal
+--unescape convert%20ugly%20escape%20sequences
+--upper    turn to upper case
+--lower    turn to lower case
+--help     print this help
 END
+#--dotlessi care about the dotless i issue of certain locales (use with care)
 }
 
 sub looks_like_utf8() {
 	my $string = shift;
 	if (not $string =~ m/^[[:ascii:]]*$/ and decode_utf8($string)) {
 		return 1;
-	} else { return 0; }
+	} else {
+		return 0;
+	}
 }
 
 sub to_ascii() {
@@ -488,10 +544,11 @@ sub dummy() {
 	return shift;
 }
 
-sub print_ask() {
+sub print_ask() { # takes 2 arguments, string and askornot
 	my $a="";
 	print shift;
-	while ($opt_i and not $a =~ m/^[yn]$/i) {
+	my $ask = shift;
+	while ($ask and not $a =~ m/^[yn]$/i) {
 		print " (y/n) ";
 		$a=<>;
 	}
@@ -500,5 +557,81 @@ sub print_ask() {
 		return 0;
 	} else {
 		return 1;
+	}
+}
+
+sub unescape_checkenc() {
+	my $name = shift;
+	if ($name =~ m/^[[:ascii:]]*$/) { # should we be more strict ?
+		&posix_check(&unescape_get_newname($name));
+		return 1;
+	} else {
+		print STDERR "\"",&$from_print($name),"\" not ASCII - this does not seem to be an escaped filename.\n";
+		return 0;
+	}
+}
+
+sub unescape_get_newname() { # return 0 on error, string otherwise
+	my $newname = shift;
+#	$newname =~ s/([^a-zA-Z0-9_.-])/uc sprintf("%%%02x",ord($1))/eg; # this was done before
+	$newname =~ s/(%)([0-9a-fA-F][0-9a-fA-F])/chr(hex($2))/eg;
+	return $newname;
+}
+
+
+sub upperlower_checkenc() {
+	my $oldname = shift;
+	my $newname = upperlower_get_newname($oldname);
+	if (! $newname) {
+		return 0;
+	} else {
+		&posix_check($newname);
+		return 1;
+	}
+}
+
+sub upperlower_get_newname() {
+# return 0 on error, string otherwise
+	my $oldname = shift;
+	my $name=$oldname;
+	if (! from_to($name, $opt_f, "utf8", Encode::FB_QUIET)) { # should also leave NFD as it is ...
+		print STDERR "\"",&$from_print($oldname),"\" not encoded in $opt_f ? Supply the correct encoding via -f option!\n";
+		return 0;
+	}
+	_utf8_on($name);	# Unicode in Perl can be a real pain ...
+	no bytes;
+	if ($opt_upper) {
+		if ($opt_dotlessi) {
+			$name =~ s/ı/I/g;
+			$name =~ s/i/İ/g;
+		}
+		# we do not want to upper ß to SS ! Let's substitute it with NUL+DWSLQH (NUL may not be part of filename) and get it back after uc()
+		$name =~ s/ß/\000DWSLQH/g;
+		$name = uc($name);
+		$name =~ s/\000DWSLQH/ß/g;
+	} else {
+		if ($opt_dotlessi) {
+			$name =~ s/I/ı/g;
+			$name =~ s/İ/i/g;
+		}
+		$name = lc($name);
+	}
+	use bytes;
+	_utf8_off($name);
+	# we should also do special treatment for UTF-8 NFD of "I with dot above" in byte mode now, otherwise we get "i̇", which is a double-single dotted i ;-)
+	# the problems that arise with this letter are endless ...
+#	$name =~ s/i\314\207/i/g if ($from_is_utf8);
+	if (! from_to($name, "utf8", $opt_f, Encode::FB_QUIET)) {
+		print STDERR $opt_upper?"Upper":"Lower","case of \"",&$from_print($oldname),"\" not possible in $opt_f ! Maybe supply different encoding via -f option.\n";
+		return 0;
+	}
+	return $name;
+}
+
+sub posix_check() {
+	my $name=shift;
+	if ($name =~ m/[\000\/]/) {
+		print STDERR "WARNING: new filename \"",&$to_print($name),"\" contains characters, which are not POSIX filesystem conform! This may result in data loss.\n";
+		$warnings_occurred=1;
 	}
 }
