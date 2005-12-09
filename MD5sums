@@ -2,17 +2,17 @@
 Hash: SHA1
 
 e0dc2bf8cde8e56d69cef5d30c702da3  ./GPL2
-e1d1466e0da758f898563b9fbee88306  ./TODO
-1e908fc18ee0c93c318f12dbcc0db519  ./Makefile
-bd7a8a5549c84858e04bec678f576b3e  ./testsuite.tar
-9d408e922f6a1dc725487b64d7a951bf  ./Changes
-c72db3d33f177b731e9c25aa13e84ff8  ./convmv
-b536d3f84f8c9a617fa719bfee2e7e7a  ./VERSION
-0e0b56efb50933936e1fa5ba068168b6  ./CREDITS
+f3b37def5387cc3c7612cced43c2faba  ./testsuite.tar
+0c470de017eb544eb813be0193e701b8  ./Changes
+f38e3517eb6eab6173d2b0bffeacb555  ./Makefile
+6631f26e38a7a21ae887555cb263041b  ./TODO
+886a21f40f83293ea6707804b5b970bc  ./VERSION
+1a386d1480f099a44b628d921cba2eab  ./convmv
+8bed1a74d53b68c1bce15d32309bdb52  ./CREDITS
 -----BEGIN PGP SIGNATURE-----
-Version: GnuPG v1.2.4 (GNU/Linux)
+Version: GnuPG v1.4.2 (GNU/Linux)
 
-iD8DBQFBKguZdoo0s+hIejkRAgEPAJsGnn/UUosIvZhhPsBTOV0A7yvmIwCdEb+V
-4G99yezBJfdhok7i3SWg2Cs=
-=NKk+
+iD8DBQFDma72doo0s+hIejkRAmmNAJ0Xw7KzInW3aGBqufqZKiLWcl8aZACfX3p1
+mtRqglUl/qWyzyB9+CDf+N4=
+=gr51
 -----END PGP SIGNATURE-----

@@ -1,5 +1,13 @@
 Does this make sense? :
 
 - logfile option
+- convert names in uni_xlate (man 8 mount, vfat ...)
+- --exclude option
+- verbose mode printing actual scanned files
+- --null option for "find -print0 | xargs convmv --null" usage
+- map illegal ntfs characters away: " / \ * ? < > | :
+- map "most" strange chracters to ASCII equivalences
+- parsable column mode \0..\0..\0\0 terminated
+
 
 any other suggestions?

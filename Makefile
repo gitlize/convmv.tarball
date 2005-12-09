@@ -29,6 +29,6 @@ dist: clean
 	echo convmv-`cat VERSION` >.name
 	mkdir `cat .name`
 	mv `cat .files` `cat .name`
-	tar --posix -cv * |gzip > `cat .name`.tar.gz
+	tar -cv * |gzip > `cat .name`.tar.gz
 	mv `cat .name`/* .
 	rmdir `cat .name`

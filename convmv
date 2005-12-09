@@ -1,6 +1,6 @@
 #!/usr/bin/perl
-# convmv 1.08 - converts filenames from one encoding to another
-# Copyright © 2003-2004 Bjoern JACKE <bjoern@j3e.de>
+# convmv 1.09 - converts filenames from one encoding to another
+# Copyright © 2003-2005 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 # under the terms of the GNU General Public License version 2 as published by
@@ -316,6 +316,8 @@ for (@args) {
 
 ## do {print ord($_)."_" for (split(//,$_));print "\n"; } for (@args); # debug print
 
+print STDERR "Starting a dry run without changes...\n" unless ($opt_notest);
+
 if ($opt_r) {
 	find({wanted=>\&scan,bydepth=>1,no_chdir=>1}, @args);
 	$errors_occurred=1 if ($warnings_occurred and not &print_ask ("WARNINGS occurred. Do you really want to continue?",1));
@@ -484,8 +486,9 @@ sub listvalidencodings() {
 sub char_checkenc() {
 	my $oldfile=shift;
 	my $new=$oldfile;
+	my $tmpnew=$oldfile;
 	if ($from_is_utf8) {
-		if (! defined(decode_utf8($new))) {
+		if (! defined(utf8::decode($tmpnew))) {
 			print STDERR "this file was not validly encoded in UTF-8: \"". &$from_print($dir.$oldfile) ."\"\n";
 			return 0;
 		}
@@ -522,8 +525,8 @@ sub char_checkenc() {
 
 sub printusage {
 	print <<END;
-convmv 1.08 - converts filenames from one encoding to another
-Copyright (C) 2003-2004 Bjoern JACKE <bjoern\@j3e.de>
+convmv 1.09 - converts filenames from one encoding to another
+Copyright (C) 2003-2005 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 under the terms of the GNU General Public License version 2 as published by
@@ -554,7 +557,7 @@ END
 
 sub looks_like_utf8() {
 	my $string = shift;
-	if ($string =~ m/[^[:ascii:]]/ and decode_utf8($string)) {
+	if ($string =~ m/[^[:ascii:]]/ and utf8::decode($string)) {
 		return 1;
 	} else {
 		return 0;

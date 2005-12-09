@@ -1,3 +1,8 @@
+1.09
+- work around broken decode_utf8() in Perl 5.8.7 resp. Encode 2.10 (use utf8::decode instead)
+- adopt test suite to catch cases like this
+- warn about dry test run at start, not just at end of a test run
+
 1.08
 - do not complain about wrong from_enc if to_enc is utf8 and files are, too; this happens with from_enc being a multibyte encoding. Thanks to Kuang-che Wu
 - fixed bug, where filename "0" was considered to be wrong utf-8 if from_enc was utf8
