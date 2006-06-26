@@ -1,6 +1,6 @@
 #!/usr/bin/perl
-# convmv 1.09 - converts filenames from one encoding to another
-# Copyright © 2003-2005 Bjoern JACKE <bjoern@j3e.de>
+# convmv 1.10 - converts filenames from one encoding to another
+# Copyright © 2003-2006 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 # under the terms of the GNU General Public License version 2 as published by
@@ -109,7 +109,7 @@ ASCII-encoded, convmv expects a charset to be entered via the -f switch.
 
 care about the dotless i/I issue. A lowercase version of "I" will also be
 dotless while an uppercase version of "i" will also be dotted. This is an
-issue for Lithuanian, Turkish and Azeri.
+issue for Turkish and Azeri.
 
 By the way: The superscript dot of the letter i was added in the Middle Ages to
 distinguish the letter (in manuscripts) from adjacent vertical strokes in such
@@ -151,9 +151,8 @@ possible to create NFC UTF-8 filenames because this is prevented at filesystem
 layer.  On HFS+ filenames are internally stored in UTF-16 and when converted
 back to UTF-8, for the underlying BSD system to be handable, NFD is created. If
 someone knows why Apple chose to do this, please let me know. I think it was a
-very bad idea and breaks many things under OS X which expect normal a POSIX
-conforming system. If you want a nice GUI use OS X, if you want a sane Unix
-don't use OS X. Anywhere else convmv is able to convert files from NFC to
+very bad idea and breaks many things under OS X which expect a normal POSIX
+conforming system. Anywhere else convmv is able to convert files from NFC to
 NFD or vice versa which makes interoperability with such systems a lot easier.
 
 =head3 JFS
@@ -175,6 +174,12 @@ Despite other POSIX filesystems RFC3530 (NFS 4) mandates UTF-8 but also says:
 revision of this specification may specify a particular normalization form." In
 other words, if you want to use NFS4 you might find the conversion and
 normalization features of convmv quite useful.
+
+=head3 FAT/VFAT and NTFS
+
+NTFS and VFAT (for long filenames) use UTF-16 internally to store filenames.
+You should not need to convert filenames if you mount one of those filesystems.
+Use appropriate mount options instead!
 
 =head2 How to undo double UTF-8 (or other) encoded filenames
 
@@ -269,19 +274,20 @@ if ($opt_unescape) {
 	die "No charset conversion when unescaping!\n" if ($opt_f or $opt_t);
 	$checkenc=\&unescape_checkenc;
 	$get_newname=\&unescape_get_newname;
-} elsif ($opt_upper xor $opt_lower) {
+} elsif ($opt_upper or $opt_lower) {
 	die "No charset conversion when uppering/lowering!\n" if ($opt_t);
+	die "Not possible to --upper and --lower at once!\n" if ($opt_upper and $opt_lower);
 	$checkenc=\&upperlower_checkenc;
 	$get_newname=\&upperlower_get_newname;
 	$opt_f="ascii" unless ($opt_f);
 } else {
 	$opt_f=Encode::resolve_alias($opt_f) or die "wrong/unknown \"from\" encoding!\n";
 	$opt_t=Encode::resolve_alias($opt_t) or die "wrong/unknown \"to\" encoding!\n";
-	$to_is_utf8 = lc($opt_t) =~ m/^utf-?8$/;
 	$checkenc=\&char_checkenc;
 	$get_newname=\&char_get_newname;
 }
-$from_is_utf8 = lc($opt_f) =~ m/^utf-?8$/;
+$to_is_utf8 = lc($opt_t) =~ m/^utf-?8/;
+$from_is_utf8 = lc($opt_f) =~ m/^utf-?8/;
 
 if ($opt_qfrom) {
 	$from_print=\&to_ascii;
@@ -320,16 +326,20 @@ print STDERR "Starting a dry run without changes...\n" unless ($opt_notest);
 
 if ($opt_r) {
 	find({wanted=>\&scan,bydepth=>1,no_chdir=>1}, @args);
-	$errors_occurred=1 if ($warnings_occurred and not &print_ask ("WARNINGS occurred. Do you really want to continue?",1));
+	if (not $errors_occurred and $warnings_occurred) {
+		$errors_occurred=1 if (&print_ask ("WARNINGS occurred. Do you really want to continue?",1));
+	}
 	die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occurred);
 	find({wanted=>\&process_symlink_targets,bydepth=>1,no_chdir=>1}, @args) unless ($opt_exec);
 	find({wanted=>\&process_main,bydepth=>1,no_chdir=>1}, @args);
 } else {
-	for my $a (@args) { &scan($a); }
-	$errors_occurred=1 if ($warnings_occurred and not &print_ask ("WARNINGS occurred. Do you really want to continue?",1));
-	die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occurred);
-	unless ($opt_exec) { for my $a (@args) { &process_symlink_targets($a); } }
-	for my $a (@args) { &process_main($a); }
+	for (@args) { &scan; }
+	if (not $errors_occurred and $warnings_occurred) {
+		$errors_occurred=1 if (&print_ask ("WARNINGS occurred. Do you really want to continue?",1));
+	}
+	die "To prevent damage to your files, we won't continue.\nFirst fix errors or correct options!\n" if ($errors_occurred);
+	unless ($opt_exec) { for (@args) { &process_symlink_targets; } }
+	for (@args) { &process_main; }
 }
 
 if ($opt_notest) {
@@ -344,26 +354,26 @@ if ($opt_notest) {
 
 # scan for real files and check charset first:
 sub scan {
-	$arg=shift or $arg=$_;
+	$arg=$_;
 	&get_dir_base_change;
 	if (-l $arg) {
 #		print "link: $arg in $dir\n";
-		&$checkenc($arg) or $errors_occurred=1;
+		if (not defined(&$checkenc($arg))) { $errors_occurred=1 };
 	} elsif (-d $arg) {
 #		print "dir: $arg in $dir\n";
 		$inod_fullname{(stat $arg)[1]}=$dir.$arg if (!$opt_lowmem);
-		&$checkenc($arg) or $errors_occurred=1;
+		if (not defined(&$checkenc($arg))) { $errors_occurred=1 };
 	} elsif (-f $arg) {
 #		print "file: $arg in $dir\n";
 		$inod_fullname{(stat $arg)[1]}=$dir.$arg if (!$opt_lowmem);
-		&$checkenc($arg) or $errors_occurred=1;
+		if (not defined(&$checkenc($arg))) { $errors_occurred=1 };
 	}
 	chdir $pwd;
 }
 
 # move symlink targets:
 sub process_symlink_targets {
-	$arg=shift or $arg=$_;
+	$arg=$_;
 	&get_dir_base_change;
 	if (-l $arg) {
 		$oldlink=readlink $arg;
@@ -390,7 +400,7 @@ sub process_symlink_targets {
 
 # do the changes to all the real files/dirs/links:
 sub process_main {
-	$arg=shift or $arg=$_;
+	$arg=$_;
 	&get_dir_base_change;
 	if (-l $arg) {
 #		$type="symlink";
@@ -415,7 +425,7 @@ sub process_main {
 }
 
 sub char_get_newname {
-# retuns 0 on error and string otherwise.
+# retuns undef on error and string otherwise.
 	my $oldfile=shift;
 	my $newname;
 	if (!$from_is_utf8 and $to_is_utf8 and !$opt_nosmart and &looks_like_utf8($oldfile)) {
@@ -486,11 +496,10 @@ sub listvalidencodings() {
 sub char_checkenc() {
 	my $oldfile=shift;
 	my $new=$oldfile;
-	my $tmpnew=$oldfile;
 	if ($from_is_utf8) {
-		if (! defined(utf8::decode($tmpnew))) {
+		if (! &this_is_valid_utf8($new)) {
 			print STDERR "this file was not validly encoded in UTF-8: \"". &$from_print($dir.$oldfile) ."\"\n";
-			return 0;
+			return undef;
 		}
 	} else {
 		if ($to_is_utf8 and !$opt_nosmart and &looks_like_utf8($oldfile)) {
@@ -499,7 +508,7 @@ sub char_checkenc() {
 		}
 		elsif (! from_to($new,$opt_f, "utf8", Encode::FB_QUIET) ) {
 			print STDERR "this file was not validly encoded in $opt_f: \"". &$from_print($dir.$oldfile) ."\"\n";
-			return 0;
+			return undef;
 		}
 	}
 	# $new is utf-8 now and $oldfile's encoding was valid ...
@@ -514,10 +523,10 @@ sub char_checkenc() {
 ##	print "$oldfile|$utf8oldfile|$new|$filenamelength\n";
 	if (! $filenamelength) {
 		print STDERR "$opt_t doesn't cover all needed characters for: \"". &$from_print($dir.$oldfile) ."\"\n";
-		return 0;
+		return undef;
 	} elsif ($filenamelength > $maxfilenamelength) {
 		print STDERR &$from_print($dir.$oldfile).": resulting filename is $filenamelength bytes long (max: $maxfilenamelength)\n";
-		return 0;
+		return undef;
 	}
 	&posix_check($new);
 	return 1;
@@ -525,8 +534,8 @@ sub char_checkenc() {
 
 sub printusage {
 	print <<END;
-convmv 1.09 - converts filenames from one encoding to another
-Copyright (C) 2003-2005 Bjoern JACKE <bjoern\@j3e.de>
+convmv 1.10 - converts filenames from one encoding to another
+Copyright (C) 2003-2006 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 under the terms of the GNU General Public License version 2 as published by
@@ -557,10 +566,26 @@ END
 
 sub looks_like_utf8() {
 	my $string = shift;
-	if ($string =~ m/[^[:ascii:]]/ and utf8::decode($string)) {
+	if ($string =~ m/[^[:ascii:]]/ and &this_is_valid_utf8($string)) {
 		return 1;
 	} else {
-		return 0;
+		return undef;
+	}
+}
+
+sub this_is_valid_utf8() {
+	my $string = shift;
+	# until 1.08 I used to used decode_utf8() but see perl bug #37757 (perl 5.8.7/8)
+	# let's look for a different way to find valid utf-8 ...:
+	#utf8::decode() is experimental and might disappear says utf8(3pm):
+	#if (utf8::decode($string) != undef) {
+	# Encode::decode does not work as one might expect:
+	#if (Encode::decode(utf8,$string,Encode::FB_QUIET) == undef) {
+	# from_to() works for all Perl versions (at the moment ;)
+	if (from_to($string,utf8,utf8,Encode::FB_QUIET) == undef) {
+		return undef;
+	} else {
+		return 1;
 	}
 }
 
@@ -585,7 +610,7 @@ sub print_ask() { # takes 2 arguments, string and askornot
 	}
 	print "\n";
 	if ($a =~ m/^n$/i) {
-		return 0;
+		return undef;
 	} else {
 		return 1;
 	}
@@ -598,11 +623,11 @@ sub unescape_checkenc() {
 		return 1;
 	} else {
 		print STDERR "\"",&$from_print($name),"\" not ASCII - this does not seem to be an escaped filename.\n";
-		return 0;
+		return undef;
 	}
 }
 
-sub unescape_get_newname() { # return 0 on error, string otherwise
+sub unescape_get_newname() { # return undef on error, string otherwise
 	my $newname = shift;
 #	$newname =~ s/([^a-zA-Z0-9_.-])/uc sprintf("%%%02x",ord($1))/eg; # this was done before
 	$newname =~ s/(%)([0-9a-fA-F][0-9a-fA-F])/chr(hex($2))/eg;
@@ -613,8 +638,8 @@ sub unescape_get_newname() { # return 0 on error, string otherwise
 sub upperlower_checkenc() {
 	my $oldname = shift;
 	my $newname = upperlower_get_newname($oldname);
-	if (! $newname) {
-		return 0;
+	if (not defined($newname)) {
+		return undef;
 	} else {
 		&posix_check($newname);
 		return 1;
@@ -622,12 +647,12 @@ sub upperlower_checkenc() {
 }
 
 sub upperlower_get_newname() {
-# return 0 on error, string otherwise
+# return undef on error, string otherwise
 	my $oldname = shift;
 	my $name=$oldname;
 	if (! from_to($name, $opt_f, "utf8", Encode::FB_QUIET)) { # should also leave NFD as it is ...
 		print STDERR "\"",&$from_print($oldname),"\" not encoded in $opt_f ? Supply the correct encoding via -f option!\n";
-		return 0;
+		return undef;
 	}
 	_utf8_on($name);	# Unicode in Perl can be a real pain ...
 	no bytes;
@@ -654,7 +679,7 @@ sub upperlower_get_newname() {
 #	$name =~ s/i\314\207/i/g if ($from_is_utf8);
 	if (! from_to($name, "utf8", $opt_f, Encode::FB_QUIET)) {
 		print STDERR $opt_upper?"Upper":"Lower","case of \"",&$from_print($oldname),"\" not possible in $opt_f ! Maybe supply different encoding via -f option.\n";
-		return 0;
+		return undef;
 	}
 	return $name;
 }

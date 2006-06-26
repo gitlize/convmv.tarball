@@ -1,3 +1,9 @@
+1.10
+- now use from_to instead of utf8::decode (which is experimental and might vanish in the future) to check for valid UTF-8
+- updates and cleanups of testsuite and include "0" filename
+- fix "0" filename bugs
+- take into account that charset name "utf-8" resolves to "utf-8-strict" in recent Perl versions
+
 1.09
 - work around broken decode_utf8() in Perl 5.8.7 resp. Encode 2.10 (use utf8::decode instead)
 - adopt test suite to catch cases like this

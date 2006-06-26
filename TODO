@@ -8,6 +8,8 @@ Does this make sense? :
 - map illegal ntfs characters away: " / \ * ? < > | :
 - map "most" strange chracters to ASCII equivalences
 - parsable column mode \0..\0..\0\0 terminated
+- keep/restore old ctime - difficult to do! No Perl module, not
+  even a ctime option in standard "touch" command :-|
 
 
 any other suggestions?

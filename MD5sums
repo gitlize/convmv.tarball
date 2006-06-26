@@ -1,18 +1,18 @@
 -----BEGIN PGP SIGNED MESSAGE-----
-Hash: SHA1
+Hash: RIPEMD160
 
 e0dc2bf8cde8e56d69cef5d30c702da3  ./GPL2
-f3b37def5387cc3c7612cced43c2faba  ./testsuite.tar
-0c470de017eb544eb813be0193e701b8  ./Changes
+7ef7c40c910edc39fa1c0703f51d3317  ./TODO
 f38e3517eb6eab6173d2b0bffeacb555  ./Makefile
-6631f26e38a7a21ae887555cb263041b  ./TODO
-886a21f40f83293ea6707804b5b970bc  ./VERSION
-1a386d1480f099a44b628d921cba2eab  ./convmv
+18e527fbba66160e3159dcf57d8b81ce  ./testsuite.tar
+20b03ca7b386a631c79f7d3478ece195  ./Changes
+1a631929afcf2b475435f6683f074c7b  ./convmv
+22860c4e541860ca2bb02979228c4a33  ./VERSION
 8bed1a74d53b68c1bce15d32309bdb52  ./CREDITS
 -----BEGIN PGP SIGNATURE-----
 Version: GnuPG v1.4.2 (GNU/Linux)
 
-iD8DBQFDma72doo0s+hIejkRAmmNAJ0Xw7KzInW3aGBqufqZKiLWcl8aZACfX3p1
-mtRqglUl/qWyzyB9+CDf+N4=
-=gr51
+iD8DBQFEnzJvdoo0s+hIejkRA64iAJ9x244ml61zjpmPHCOtgawxqOw2ewCdFg8/
+aW3VNZIvicDT8OjG8F2iGCw=
+=jOPt
 -----END PGP SIGNATURE-----
