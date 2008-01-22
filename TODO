@@ -11,5 +11,7 @@ Does this make sense? :
 - keep/restore old ctime - difficult to do! No Perl module, not
   even a ctime option in standard "touch" command :-|
 
+- add option for a parsable mode, writing in null byte separated columns what to do with which files. This is to allow people more easily to write gui frontends for convmv. Feedback for this option is very welcome
+
 
 any other suggestions?

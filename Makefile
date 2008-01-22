@@ -18,7 +18,7 @@ clean:
 	rm -rf suite
 
 test:
-	test -d suite || tar xf testsuite.tar
+	test -d suite || tar -xf testsuite.tar
 	cd suite ; ./dotests.sh
 
 dist: clean

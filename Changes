@@ -1,3 +1,9 @@
+1.11
+- test suite compares sorted results of find to fix false alarms on some systems
+- test suite now uses tar instead of cp for copying.
+- fix a y/n mixup
+- at startup we check if Perl::Encode is not too broken (bugs 37757 and 49830 for now). Recent Perl releases are terribly broken. If this won't improve, I'll have to rewrite convmv in a language with more stable core functionality :-|. If you are distributor of convmv, please run make test before packaging to make sure you don't ship convmv with a broken Perl release.
+
 1.10
 - now use from_to instead of utf8::decode (which is experimental and might vanish in the future) to check for valid UTF-8
 - updates and cleanups of testsuite and include "0" filename

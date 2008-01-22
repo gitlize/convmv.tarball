@@ -1,6 +1,6 @@
 #!/usr/bin/perl
-# convmv 1.10 - converts filenames from one encoding to another
-# Copyright © 2003-2006 Bjoern JACKE <bjoern@j3e.de>
+# convmv 1.11 - converts filenames from one encoding to another
+# Copyright © 2003-2008 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 # under the terms of the GNU General Public License version 2 as published by
@@ -88,6 +88,9 @@ result in "double encoded UTF-8" (see section below).
 Needed to actually rename the files. By default convmv will just print what it
 wants to do.
 
+=item B<--parsable>
+This is not implemented yet.
+
 =item B<--replace>
 
 if the file to which shall be renamed already exists, it will be overwritten if
@@ -149,16 +152,17 @@ this.  Darwin, the base of the Macintosh OS enforces normalization form D
 (NFD), where a few characters are encoded in a different way. On OS X it's not
 possible to create NFC UTF-8 filenames because this is prevented at filesystem
 layer.  On HFS+ filenames are internally stored in UTF-16 and when converted
-back to UTF-8, for the underlying BSD system to be handable, NFD is created. If
-someone knows why Apple chose to do this, please let me know. I think it was a
-very bad idea and breaks many things under OS X which expect a normal POSIX
-conforming system. Anywhere else convmv is able to convert files from NFC to
-NFD or vice versa which makes interoperability with such systems a lot easier.
+back to UTF-8, for the underlying BSD system to be handable, NFD is created.
+See http://developer.apple.com/qa/qa2001/qa1173.html for defails. I think it
+was a very bad idea and breaks many things under OS X which expect a normal
+POSIX conforming system. Anywhere else convmv is able to convert files from NFC
+to NFD or vice versa which makes interoperability with such systems a lot
+easier.
 
 =head3 JFS
 
 If people mount JFS partitions with iocharset=utf8, there is a similar problem,
-because JFS is designed to store finenames internally in UTF-16, too; that is
+because JFS is designed to store filenames internally in UTF-16, too; that is
 because Linux' JFS is really JFS2, which was a rewrite of JFS for OS/2. JFS
 partitions should always be mounted with iocharset=iso8859-1, which is also the
 default with recent 2.6.6 kernels. If this is not done, JFS does not behave
@@ -210,6 +214,13 @@ old Samba-shared files from cp850 to iso8859-1.
 By the way: Samba 3.x finally maps to UTF-8 filenames by default, so also when
 you migrate from Samba 2 to Samba 3 you might have to convert your file names.
 
+=head2 Netatalk interoperability issues
+
+When Netatalk is being switched to UTF-8 which is supported in version 2 then
+it is NOT sufficient to rename the file names. There needs to be done more. See
+http://netatalk.sourceforge.net/2.0/htmldocs/upgrade.html#volumes-and-filenames
+and the uniconv utility of Netatalk for details.
+
 =head1 SEE ALSO
 
 L<locale(1)> L<utf-8(7)> L<charsets(7)>
@@ -260,6 +271,7 @@ GetOptions	('nfc'=>\$opt_nfc,
 		'upper'=>\$opt_upper,
 		'lower'=>\$opt_lower,
 		'dotlessi'=>\$opt_dotlessi,
+		'parsable'=>\$opt_parsable,
 		) or exit 1;
 use File::Compare;
 $errors_occurred=0;
@@ -270,13 +282,18 @@ $maxfilenamelength=255;
 &listvalidencodings and exit 0 if ($opt_list);
 &printusage and exit 1 if (!@ARGV or $opt_help);
 
+&check_for_broken_perl_release();
+
+if ($opt_parsable and ($opt_notest or $opt_exec or $opt_i)) {
+	die "--parsable mode cannot be used with --notest, --exec or -i\n";
+}
 if ($opt_unescape) {
 	die "No charset conversion when unescaping!\n" if ($opt_f or $opt_t);
 	$checkenc=\&unescape_checkenc;
 	$get_newname=\&unescape_get_newname;
 } elsif ($opt_upper or $opt_lower) {
 	die "No charset conversion when uppering/lowering!\n" if ($opt_t);
-	die "Not possible to --upper and --lower at once!\n" if ($opt_upper and $opt_lower);
+	die "Not possible to --upper and --lower at the same time!\n" if ($opt_upper and $opt_lower);
 	$checkenc=\&upperlower_checkenc;
 	$get_newname=\&upperlower_get_newname;
 	$opt_f="ascii" unless ($opt_f);
@@ -327,15 +344,15 @@ print STDERR "Starting a dry run without changes...\n" unless ($opt_notest);
 if ($opt_r) {
 	find({wanted=>\&scan,bydepth=>1,no_chdir=>1}, @args);
 	if (not $errors_occurred and $warnings_occurred) {
-		$errors_occurred=1 if (&print_ask ("WARNINGS occurred. Do you really want to continue?",1));
+		$errors_occurred=1 if (not &print_ask ("WARNINGS occurred. Do you really want to continue?",1));
 	}
 	die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occurred);
-	find({wanted=>\&process_symlink_targets,bydepth=>1,no_chdir=>1}, @args) unless ($opt_exec);
+	unless ($opt_exec) { find({wanted=>\&process_symlink_targets,bydepth=>1,no_chdir=>1}, @args); }
 	find({wanted=>\&process_main,bydepth=>1,no_chdir=>1}, @args);
 } else {
 	for (@args) { &scan; }
 	if (not $errors_occurred and $warnings_occurred) {
-		$errors_occurred=1 if (&print_ask ("WARNINGS occurred. Do you really want to continue?",1));
+		$errors_occurred=1 if (not &print_ask ("WARNINGS occurred. Do you really want to continue?",1));
 	}
 	die "To prevent damage to your files, we won't continue.\nFirst fix errors or correct options!\n" if ($errors_occurred);
 	unless ($opt_exec) { for (@args) { &process_symlink_targets; } }
@@ -534,8 +551,8 @@ sub char_checkenc() {
 
 sub printusage {
 	print <<END;
-convmv 1.10 - converts filenames from one encoding to another
-Copyright (C) 2003-2006 Bjoern JACKE <bjoern\@j3e.de>
+convmv 1.11 - converts filenames from one encoding to another
+Copyright (C) 2003-2008 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 under the terms of the GNU General Public License version 2 as published by
@@ -559,6 +576,7 @@ the Free Software Foundation.
 --unescape convert%20ugly%20escape%20sequences
 --upper    turn to upper case
 --lower    turn to lower case
+--parsable write a parsable todo list (see man page)
 --help     print this help
 END
 #--dotlessi care about the dotless i issue of certain locales (use with care)
@@ -575,13 +593,20 @@ sub looks_like_utf8() {
 
 sub this_is_valid_utf8() {
 	my $string = shift;
-	# until 1.08 I used to used decode_utf8() but see perl bug #37757 (perl 5.8.7/8)
+	# until 1.08 I used to use decode_utf8() but see perl bug #37757 (perl 5.8.7/8)
+	#if (not defined(decode_utf8($string)) ) {
+	#
 	# let's look for a different way to find valid utf-8 ...:
-	#utf8::decode() is experimental and might disappear says utf8(3pm):
+	# utf8::decode() is experimental and might disappear says utf8(3pm):
 	#if (utf8::decode($string) != undef) {
+	#
 	# Encode::decode does not work as one might expect:
 	#if (Encode::decode(utf8,$string,Encode::FB_QUIET) == undef) {
+	#
 	# from_to() works for all Perl versions (at the moment ;)
+	# ... and here we go: with Perl 5.10 from_to() doen't work either,
+	# see perl bug #49830. convmv 1.10 and Perl 5.10 will again only work with
+	# --nosmart. Did I mention I really feed bad about Perl Encode?
 	if (from_to($string,utf8,utf8,Encode::FB_QUIET) == undef) {
 		return undef;
 	} else {
@@ -606,7 +631,7 @@ sub print_ask() { # takes 2 arguments, string and askornot
 	my $ask = shift;
 	while ($ask and not $a =~ m/^[yn]$/i) {
 		print " (y/n) ";
-		$a=<>;
+		$a=<STDIN>;
 	}
 	print "\n";
 	if ($a =~ m/^n$/i) {
@@ -689,5 +714,35 @@ sub posix_check() {
 	if ($name =~ m/[\000\/]/) {
 		print STDERR "WARNING: new filename \"",&$to_print($name),"\" contains characters, which are not POSIX filesystem conform! This may result in data loss.\n";
 		$warnings_occurred=1;
+	}
+}
+
+# still unused, but might be used for Netatalk CAP encoding:
+sub cap2utf8() {
+	my $oldname = shift;
+	if (($oldname !~ m/^:2eDS_Store/) and ($oldname =~ /:/)) {
+		$oldname =~ s/(:([0-9a-f][0-9a-f]))/chr(hex($2))/eg;
+	}
+	return $oldname;
+} 
+
+sub check_for_broken_perl_release() {
+	# until 1.08 I used to use decode_utf8() but see perl bug #37757 (perl 5.8.7/8)
+	#if (not defined(decode_utf8($string)) )
+	my $test = "\366";
+	if (decode_utf8($test)) {
+		print "WARNING: Your Perl version is hit by bug #37757. Convmv 1.08 and below would not work here!\n";
+		print "         Perl documentation up to 5.8.8 said that decode_utf8(\$data_that_is_not_utf_8)\n";
+		print "         should return undef.\n";
+		print "         Your Perl release violates this Perl documentation from perluniintro(1)!\n";
+	}
+	if (! from_to($test,utf8,utf8,Encode::FB_QUIET) == undef) {
+		print "FATAL ERROR: Your Perl version is hit by bug #49830. This means\n";
+		print "             broken UTF-8 is silently being converted to sane UTF-8 without throwing\n";
+		print "             an error. That's too broken behaviour to make convmv do its job.\n";
+		print "             Please use a different Perl version that does not suffer from this bug.\n";
+		if (not &print_ask ("do you want to proceed regardlessly?", 1)) {
+			exit 1;
+		}
 	}
 }
