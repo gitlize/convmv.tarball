@@ -1,3 +1,7 @@
+1.12
+- now work with Perl 5.10 using an eval block
+- GPL v2 and v3 now
+
 1.11
 - test suite compares sorted results of find to fix false alarms on some systems
 - test suite now uses tar instead of cp for copying.

@@ -1,10 +1,10 @@
 #!/usr/bin/perl
-# convmv 1.11 - converts filenames from one encoding to another
+# convmv 1.12 - converts filenames from one encoding to another
 # Copyright © 2003-2008 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
-# under the terms of the GNU General Public License version 2 as published by
-# the Free Software Foundation.
+# under the terms of the GNU General Public License version 2 or 3 as
+# published by the Free Software Foundation.
 
 # to get a man page:
 # pod2man --section 1 --center=" " convmv | gzip > convmv.1.gz
@@ -551,12 +551,12 @@ sub char_checkenc() {
 
 sub printusage {
 	print <<END;
-convmv 1.11 - converts filenames from one encoding to another
+convmv 1.12 - converts filenames from one encoding to another
 Copyright (C) 2003-2008 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
-under the terms of the GNU General Public License version 2 as published by
-the Free Software Foundation.
+under the terms of the GNU General Public License version 2 or 3 as published
+by the Free Software Foundation.
 
  USAGE: convmv [options] FILE(S)
 -f enc     encoding *from* which should be converted
@@ -604,10 +604,14 @@ sub this_is_valid_utf8() {
 	#if (Encode::decode(utf8,$string,Encode::FB_QUIET) == undef) {
 	#
 	# from_to() works for all Perl versions (at the moment ;)
-	# ... and here we go: with Perl 5.10 from_to() doen't work either,
+	# ... and here we go: with Perl 5.10 from_to(utf8..utf8) doen't work either,
 	# see perl bug #49830. convmv 1.10 and Perl 5.10 will again only work with
-	# --nosmart. Did I mention I really feed bad about Perl Encode?
-	if (from_to($string,utf8,utf8,Encode::FB_QUIET) == undef) {
+	# --nosmart.
+	#
+	#okay now perluniintro suggests to do this:
+
+	eval { decode_utf8($string, Encode::FB_CROAK); };
+	if ($@) {
 		return undef;
 	} else {
 		return 1;
@@ -729,20 +733,22 @@ sub cap2utf8() {
 sub check_for_broken_perl_release() {
 	# until 1.08 I used to use decode_utf8() but see perl bug #37757 (perl 5.8.7/8)
 	#if (not defined(decode_utf8($string)) )
+	my $bugs = "";
 	my $test = "\366";
 	if (decode_utf8($test)) {
-		print "WARNING: Your Perl version is hit by bug #37757. Convmv 1.08 and below would not work here!\n";
-		print "         Perl documentation up to 5.8.8 said that decode_utf8(\$data_that_is_not_utf_8)\n";
-		print "         should return undef.\n";
-		print "         Your Perl release violates this Perl documentation from perluniintro(1)!\n";
+		$bugs .= "#37757 ";
+		# Convmv 1.08 and below would not work here!
+		# Perl documentation up to 5.8.8 said that
+		# decode_utf8($data_that_is_not_utf_8) should return undef
 	}
 	if (! from_to($test,utf8,utf8,Encode::FB_QUIET) == undef) {
-		print "FATAL ERROR: Your Perl version is hit by bug #49830. This means\n";
-		print "             broken UTF-8 is silently being converted to sane UTF-8 without throwing\n";
-		print "             an error. That's too broken behaviour to make convmv do its job.\n";
-		print "             Please use a different Perl version that does not suffer from this bug.\n";
-		if (not &print_ask ("do you want to proceed regardlessly?", 1)) {
-			exit 1;
-		}
+		$bugs .= "#49830 ";
+		# convmv 1.10-1.11 would not work here!
+		# broken UTF-8 is silently being converted to sane UTF-8 without throwing
+		# an error. 
 	}
+	if ($bugs) {
+		print "Your Perl version has fleas $bugs\n";
+	}
+
 }
