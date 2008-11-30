@@ -1,6 +1,9 @@
 DESTDIR=
 PREFIX=/usr/local
 MANDIR=$(PREFIX)/share/man
+TAR=tar
+FIND=find
+SED=sed
 
 all: manpage
 
@@ -14,21 +17,21 @@ manpage:
 	pod2man --section 1 --center=" " convmv | gzip > convmv.1.gz
 
 clean:
-	rm -f convmv.1.gz convmv-*.tar.gz MD5sums .files .name
+	rm -f convmv.1.gz convmv-*.tar.gz MD5sums SHA256sums .files .name
 	rm -rf suite
 
 test:
-	test -d suite || tar -xf testsuite.tar
+	test -d suite || $(TAR) xf testsuite.tar
 	cd suite ; ./dotests.sh
 
 dist: clean
-	sed -n "2,2p" convmv |sed "s/.*convmv \([^ ]*\).*/\1/" > VERSION
-	md5sum `find . -name "*" -type f` |gpg --clearsign >.MD5sums
-	mv .MD5sums MD5sums
+	$(SED) -n "2,2p" convmv |$(SED) "s/.*convmv \([^ ]*\).*/\1/" > VERSION
+	$(FIND) . -name "*" ! -name ".*" -type f -print | xargs sha256sum | gpg --clearsign > .SHA256sums
+	mv .SHA256sums SHA256sums
 	ls > .files
 	echo convmv-`cat VERSION` >.name
 	mkdir `cat .name`
 	mv `cat .files` `cat .name`
-	tar -cv * |gzip > `cat .name`.tar.gz
+	$(TAR) cvf - * |gzip > `cat .name`.tar.gz
 	mv `cat .name`/* .
 	rmdir `cat .name`

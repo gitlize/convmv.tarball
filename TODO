@@ -7,11 +7,8 @@ Does this make sense? :
 - --null option for "find -print0 | xargs convmv --null" usage
 - map illegal ntfs characters away: " / \ * ? < > | :
 - map "most" strange chracters to ASCII equivalences
-- parsable column mode \0..\0..\0\0 terminated
 - keep/restore old ctime - difficult to do! No Perl module, not
   even a ctime option in standard "touch" command :-|
-
-- add option for a parsable mode, writing in null byte separated columns what to do with which files. This is to allow people more easily to write gui frontends for convmv. Feedback for this option is very welcome
 
 
 any other suggestions?

@@ -1,3 +1,14 @@
+1.13
+- move non fatal Perl bug checks into the help screen output
+- fix Perl warnings when wrong/unknown charset is used
+- run check for some essential Encode functionality at every startup
+- add --fixdouble option to only fix files that are double-UTF-8 encoded
+- add --parsable option to allow convmv output parsable suggestions for external tools to to something with it
+- add --preserve-mtimes option to restore mtimes of parent directories
+- allow an argv to be a symlink
+- don't checksum deleted files in tar ball and use sha256 now
+- allow skippig of certain test suite tests, useful for OS X to skip NFC/NFD related stuff, for example "make test SKIPTESTS=nfd-test,someothertest" will skip that test(s)
+
 1.12
 - now work with Perl 5.10 using an eval block
 - GPL v2 and v3 now

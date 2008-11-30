@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# convmv 1.12 - converts filenames from one encoding to another
+# convmv 1.13 - converts filenames from one encoding to another
 # Copyright © 2003-2008 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -83,13 +83,35 @@ skip this file if conversion from some charset to UTF8 should be performed.
 C<--nosmart> will also force conversion to UTF-8 for such files, which might
 result in "double encoded UTF-8" (see section below).
 
+=item B<--fixdouble>
+
+using the C<--fixdouble> option convmv does only convert files which will still
+be UTF-8 encoded after conversion. That's useful for fixing double-encoded
+UTF-8 files. All files which are not UTF-8 or will not result in UTF-8 after
+conversion will not be touched. Also see chapter "How to undo double UTF-8 ..."
+below.
+
 =item B<--notest>
 
 Needed to actually rename the files. By default convmv will just print what it
 wants to do.
 
 =item B<--parsable>
-This is not implemented yet.
+
+This is an advanced option that people who want to write a GUI front end will
+find useful (some others maybe, too). It will convmv make print out what it
+would do in an easy parsable way. The first column contains the action or some
+kind of information, the second column mostly contains the file that is to be
+modified and if appropriate the third column contains the modified value.  Each
+column is separated by \0\n (nullbyte newline). Each row (one action) is
+separated by \0\0\n (nullbyte nullbyte newline).
+
+=item B<--preserve-mtimes>
+
+modifying filenames usually causes the parent directory's mtime being updated.
+This option allows to reset the mtime to the old value. If your filesystem
+supports sub-second resolution the sub-second part of the atime and mtime
+will be lost as Perl does not yet support that.
 
 =item B<--replace>
 
@@ -191,14 +213,16 @@ Sometimes it might happen that you "double-encoded" certain filenames, for
 example the file names already were UTF-8 encoded and you accidently did
 another conversion from some charset to UTF-8. You can simply undo that by
 converting that the other way round. The from-charset has to be UTF-8 and the
-to-charset has to be the from-charset you previously accidently used. You
-should check to get the correct results by doing the conversion without
-C<--notest> before, also the C<--qfrom> option might be helpful, because the
-double utf-8 file names might screw up your terminal if they are being
-printed - they often contain control sequences which do funny things with your
-terminal window. If you are not sure about the charset which was accidently
-converted from, using C<--qfrom> is a good way to fiddle out the required
-encoding without destroying the file names finally.
+to-charset has to be the from-charset you previously accidently used.  If you
+use the C<--fixdouble> option convmv will make sure that only files will be
+processed that will still be UTF-8 encoded after conversion and it will leave
+non-UTF-8 files untouched. You should check to get the correct results by doing
+the conversion without C<--notest> before, also the C<--qfrom> option might be
+helpful, because the double utf-8 file names might screw up your terminal if
+they are being printed - they often contain control sequences which do funny
+things with your terminal window. If you are not sure about the charset which
+was accidently converted from, using C<--qfrom> is a good way to fiddle out the
+required encoding without destroying the file names finally.
 
 =head2 How to repair Samba files
 
@@ -272,6 +296,8 @@ GetOptions	('nfc'=>\$opt_nfc,
 		'lower'=>\$opt_lower,
 		'dotlessi'=>\$opt_dotlessi,
 		'parsable'=>\$opt_parsable,
+		'fixdouble'=>\$opt_fixdouble,
+		'preserve-mtimes'=>\$opt_mtimes,
 		) or exit 1;
 use File::Compare;
 $errors_occurred=0;
@@ -279,14 +305,23 @@ $warnings_occurred=0;
 $maxfilenamelength=255;
 # $maxpathlength=4096; # this might be used somehow, somewhere?
 
+%dir_time_hash=();
+
+# delimiter and final delimiter for parsable mode:
+$del = "\0\n";
+$fin_del = "\0\0\n";
+
 &listvalidencodings and exit 0 if ($opt_list);
 &printusage and exit 1 if (!@ARGV or $opt_help);
 
 &check_for_broken_perl_release();
 
-if ($opt_parsable and ($opt_notest or $opt_exec or $opt_i)) {
-	die "--parsable mode cannot be used with --notest, --exec or -i\n";
+if ($opt_parsable) {
+	if ($opt_notest or $opt_exec or $opt_i) {
+		die "--parsable mode cannot be used with --notest, --exec or -i\n";
+	}
 }
+
 if ($opt_unescape) {
 	die "No charset conversion when unescaping!\n" if ($opt_f or $opt_t);
 	$checkenc=\&unescape_checkenc;
@@ -298,9 +333,17 @@ if ($opt_unescape) {
 	$get_newname=\&upperlower_get_newname;
 	$opt_f="ascii" unless ($opt_f);
 } else {
-	$opt_f=Encode::resolve_alias($opt_f) or die "wrong/unknown \"from\" encoding!\n";
-	$opt_t=Encode::resolve_alias($opt_t) or die "wrong/unknown \"to\" encoding!\n";
-	$checkenc=\&char_checkenc;
+	if (not ($opt_f and $opt_f=Encode::resolve_alias($opt_f))) {
+		die "wrong/unknown \"from\" encoding!\n";
+	}
+	if (not ($opt_t and $opt_t=Encode::resolve_alias($opt_t))) {
+		die "wrong/unknown \"to\" encoding!\n";
+	}
+	if ($opt_fixdouble) {
+		$checkenc=\&fixdouble_checkenc;
+	} else {
+		$checkenc=\&char_checkenc;
+	}
 	$get_newname=\&char_get_newname;
 }
 $to_is_utf8 = lc($opt_t) =~ m/^utf-?8/;
@@ -311,6 +354,7 @@ if ($opt_qfrom) {
 } else {
 	$from_print=\&dummy;
 }
+
 if ($opt_qto) {
 	$to_print=\&to_ascii;
 } else {
@@ -327,6 +371,10 @@ if ($opt_nfc) {
 	$norm=\&dummy;
 }
 
+if ($opt_fixdouble) {
+	die "--fixdouble requires UTF-8 as source and non-UTF-8 as target charset\n" unless ($from_is_utf8 and $opt_t and not $to_is_utf8);
+}
+
 $opt_lowmem=1 if ($opt_exec);
 
 $pwd=cwd();
@@ -334,55 +382,73 @@ $pwd=cwd();
 undef @ARGV;
 
 for (@args) {
-	die "file or directory not found: $_\n" unless (-e);
+	die "file or directory not found: $_\n" unless (-e or -l);
+}
+
+if ($opt_parsable) {
+	$outerr=NUL;
+} else {
+	$outerr=STDERR;
 }
 
 ## do {print ord($_)."_" for (split(//,$_));print "\n"; } for (@args); # debug print
 
-print STDERR "Starting a dry run without changes...\n" unless ($opt_notest);
+print $outerr "Starting a dry run without changes...\n" unless ($opt_notest);
 
 if ($opt_r) {
-	find({wanted=>\&scan,bydepth=>1,no_chdir=>1}, @args);
-	if (not $errors_occurred and $warnings_occurred) {
-		$errors_occurred=1 if (not &print_ask ("WARNINGS occurred. Do you really want to continue?",1));
-	}
-	die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occurred);
-	unless ($opt_exec) { find({wanted=>\&process_symlink_targets,bydepth=>1,no_chdir=>1}, @args); }
-	find({wanted=>\&process_main,bydepth=>1,no_chdir=>1}, @args);
+	$myfind=\&find;
 } else {
-	for (@args) { &scan; }
-	if (not $errors_occurred and $warnings_occurred) {
-		$errors_occurred=1 if (not &print_ask ("WARNINGS occurred. Do you really want to continue?",1));
-	}
-	die "To prevent damage to your files, we won't continue.\nFirst fix errors or correct options!\n" if ($errors_occurred);
-	unless ($opt_exec) { for (@args) { &process_symlink_targets; } }
-	for (@args) { &process_main; }
+	$myfind=\&find0depth;
+}
+
+&$myfind({wanted=>\&scan,bydepth=>1,no_chdir=>1}, @args);
+if (not $errors_occurred and $warnings_occurred) {
+	$errors_occurred=1 if (not &print_ask ("WARNINGS occurred. Do you really want to continue?",1));
+}
+
+die "To prevent damage to your files, we won't continue.\nFirst fix this or correct options!\n" if ($errors_occurred);
+unless ($opt_exec) {
+	&$myfind({wanted=>\&process_symlink_targets,bydepth=>1,no_chdir=>1}, @args);
+}
+&$myfind({wanted=>\&process_main,bydepth=>1,no_chdir=>1}, @args);
+
+# check for unintentionally left files
+for (keys %dir_time_hash) {
+	print $outerr "error: left in %dir_time_hash: $_\n";
 }
 
 if ($opt_notest) {
-	print STDERR "Ready!\n",
+	print $outerr "Ready!\n",
 } else {
-	print STDERR "No changes to your files done. Use --notest to finally rename the files.\n";
+	print $outerr "No changes to your files done. Use --notest to finally rename the files.\n";
 }
 
 #####
 ## subs
 ###
 
+# find-like function but without any depth search for not recursive mode:
+sub find0depth() {
+	my $opts = shift;
+	for (@_) {
+		$$opts{'wanted'}($_);
+	}
+}
+
 # scan for real files and check charset first:
 sub scan {
-	$arg=$_;
+	$arg = $_;
 	&get_dir_base_change;
 	if (-l $arg) {
 #		print "link: $arg in $dir\n";
 		if (not defined(&$checkenc($arg))) { $errors_occurred=1 };
 	} elsif (-d $arg) {
 #		print "dir: $arg in $dir\n";
-		$inod_fullname{(stat $arg)[1]}=$dir.$arg if (!$opt_lowmem);
+		$inod_fullname{(stat $arg)[1]}=$dir."/".$arg if (!$opt_lowmem);
 		if (not defined(&$checkenc($arg))) { $errors_occurred=1 };
 	} elsif (-f $arg) {
 #		print "file: $arg in $dir\n";
-		$inod_fullname{(stat $arg)[1]}=$dir.$arg if (!$opt_lowmem);
+		$inod_fullname{(stat $arg)[1]}=$dir."/".$arg if (!$opt_lowmem);
 		if (not defined(&$checkenc($arg))) { $errors_occurred=1 };
 	}
 	chdir $pwd;
@@ -399,15 +465,19 @@ sub process_symlink_targets {
 				if ( $inod_fullname{(stat $oldlink)[1]} or $opt_lowmem) { # = if (symlink target scanned before)
 					#print is_utf8($oldlink) ? 1 : 0;
 					#print is_utf8($newname) ? 1 : 0;
-					print "symlink \"".&$from_print($File::Find::name)."\": \"";
-					print &$from_print($oldlink)."\" >> \"";
+					print $outerr "symlink \"".&$from_print($File::Find::name)."\": \"";
+					print $outerr "".&$from_print($oldlink)."\" >> \"";
 					&print_ask (&$to_print($newname)."\"",$opt_i) or return;
+					&save_parent_mtime($dir) if ($opt_mtimes);
 					if ($opt_notest) {
 						unlink $arg;
 						symlink ($newname, $arg);
+					} elsif ($opt_parsable) {
+						print "unlink".$del.$File::Find::name.$fin_del;
+						print "symlink".$del.$newname.$del.$File::Find::name.$fin_del;
 					}
 				} else {
-					print STDERR "link target \"",&$from_print($oldlink),"\" of \"",&$from_print($dir.$arg),"\" not in subtree, left untouched!\n";
+					print $outerr "link target \"",&$from_print($oldlink),"\" of \"",&$from_print($dir."/".$arg),"\" not in subtree, left untouched!\n";
 				}
 			} # else { print "no need to convert link target: $oldlink to $newname\n"; }
 		}
@@ -438,24 +508,41 @@ sub process_main {
 			&renameit($arg,$newname);
 		}
 	}
+	&restore_times_if_any($dir,$arg,$newname) if ($opt_mtimes);
+
 	chdir $pwd;
 }
 
 sub char_get_newname {
-# retuns undef on error and string otherwise.
+# returns undef on error and string otherwise.
 	my $oldfile=shift;
 	my $newname;
+	my $lets_die = 0;
 	if (!$from_is_utf8 and $to_is_utf8 and !$opt_nosmart and &looks_like_utf8($oldfile)) {
-		print STDERR "Skipping, already UTF-8: ",&$from_print($dir.$oldfile),"\n";
+		if ($opt_parsable) {
+			print "іnfomsg".$del."skipalreadyutf8".$del.$dir."/".$oldfile.$fin_del;
+		} else {
+			print $outerr "Skipping, already UTF-8: ",&$from_print($dir."/".$oldfile),"\n";
+		}
 		return $oldfile;
 	} else {
+		if ($opt_fixdouble and not looks_like_utf8($oldfile)) {
+			# this is legacy encoding which we ignore in fixdouble mode
+			return $oldfile;
+		}
 		if ($from_is_utf8 and ! $to_is_utf8) {
 			# from_to can't convert from NFD to non-UTF-8!
 			$newname=encode_utf8(NFC(decode_utf8($oldfile)));
 		} else {
 			$newname=$oldfile;
 		}
-		from_to($newname, $opt_f, $opt_t, Encode::FB_QUIET) or die "SHOULD NOT HAPPEN HERE: conversion error, so suitable charset used?: \"$oldfile\"\nTo prevent damage to your files, we won't continue. First fix this!\n";
+		from_to($newname, $opt_f, $opt_t, Encode::FB_QUIET) or $lets_die = 1;
+		if ($opt_fixdouble and not looks_like_utf8($newname)) {
+			return $oldfile;
+		}
+		if ($lets_die) {
+			die "SHOULD NOT HAPPEN HERE: conversion error, no suitable charset used?: \"$oldfile\"\nTo prevent damage to your files, we won't continue. First fix this!\n";
+		}
 		$newname=&$norm(decode_utf8($newname)) if ($to_is_utf8);
 		return $newname;
 	}
@@ -464,7 +551,7 @@ sub char_get_newname {
 
 sub get_dir_base_change() {
 	$arg =~ s/\/*$//;
-	$dir=dirname($arg)."/";
+	$dir=dirname($arg);
 	$arg=basename($arg);
 	chdir $dir;
 }
@@ -483,25 +570,63 @@ sub renameit() {
 	} else {
 		#print is_utf8($oldfile) ? 1 : 0;
 		#print is_utf8($newname) ? 1 : 0;
-		&print_ask ("mv \"". &$from_print($dir.$oldfile)."\"\t\"".&$from_print($dir).&$to_print($newname)."\"",$opt_i) or return;
+		&print_ask ("mv \"". &$from_print($dir."/".$oldfile)."\"\t\"".&$from_print($dir)."/".&$to_print($newname)."\"",$opt_i) or return;
 	}
+	&save_parent_mtime($dir) if ($opt_mtimes);
 	if (-e $newname and !$opt_exec) {
 		if ($opt_replace and !&compare($oldfile,$newname)) {
 			if ($opt_notest) {
-				unlink $newname or print STDERR "Error: $!\n";
-				rename ($oldfile, $newname) or print STDERR "Error: $!\n";
+				unlink $newname or print $outerr "Error: $!\n";
+				rename ($oldfile, $newname) or print $outerr "Error: $!\n";
+			} elsif ($opt_parsable) {
+				print "unlink".$del.$dir."/".$oldfile.$fin_del;
+				print "rename".$del.$dir."/".$oldfile.$del.$dir."/".$newname.$fin_del;
 			}
 		} else {
-			print STDERR &$to_print($newname)," exists and differs or --replace option missing - skipped\n";
+			if ($opt_parsable) {
+				print "errormsg".$del."fileexists".$del.$newname.$fin_del;
+			} else {
+				print $outerr "".&$to_print($newname)," exists and differs or --replace option missing - skipped\n";
+			}
 		}
 	} else {
 		if ($opt_notest) {
 			if ($opt_exec) {
 				system($cmd);
 			} else {
-				rename ($oldfile, $newname) or print STDERR "Error: $!\n";
+				rename ($oldfile, $newname) or print $outerr "Error: $!\n";
 			}
+		} elsif ($opt_parsable) {
+			print "rename".$del.$dir."/".$oldfile.$del.$dir."/".$newname.$fin_del;
 		}
+	}
+}
+
+sub save_parent_mtime() {
+	my $dir=shift;
+	return if (exists $dir_time_hash{$dir});
+	#print $outerr "Putting $dir in %dir_time_hash\n";
+	@{$dir_time_hash{$dir}}=(stat("."))[8..10];
+}
+
+sub restore_times_if_any() {
+	my $dir=shift;
+	my $old=shift;
+	my $new=shift;
+	if ($dir eq ".") {
+		$dir = "";
+	} else {
+		$dir .= "/";
+	}
+	$dir .= $old;
+	## print $outerr "Trying to delete $dir now $new from %dir_time_hash\n"; # debug print
+	if (exists $dir_time_hash{$dir}) {
+		if ($opt_notest) {
+			utime ${$dir_time_hash{$dir}}[0], ${$dir_time_hash{$dir}}[1], $new or print $outerr "Could not run utime() on $new: $!\n";
+		} elsif ($opt_parsable) {
+			print "utime".$del.$dir.$del.${$dir_time_hash{$dir}}[0].$del.${$dir_time_hash{$dir}}[1].$del.${$dir_time_hash{$dir}}[2].$fin_del;
+		}
+		delete $dir_time_hash{$dir};
 	}
 }
 
@@ -510,12 +635,20 @@ sub listvalidencodings() {
 	return 1;
 }
 
+sub fixdouble_checkenc() {
+	return 1;
+}
+
 sub char_checkenc() {
 	my $oldfile=shift;
 	my $new=$oldfile;
 	if ($from_is_utf8) {
 		if (! &this_is_valid_utf8($new)) {
-			print STDERR "this file was not validly encoded in UTF-8: \"". &$from_print($dir.$oldfile) ."\"\n";
+			if ($opt_parsable) {
+				print "errormsg".$del."filenotutf8".$del.$oldfile.$fin_del;
+			} else {
+				print $outerr "this file was not validly encoded in UTF-8: \"". &$from_print($dir."/".$oldfile) ."\"\n";
+				}
 			return undef;
 		}
 	} else {
@@ -524,7 +657,11 @@ sub char_checkenc() {
 			# be "smart-skipped" if to_enc is utf-8 and not produce no error here.
 		}
 		elsif (! from_to($new,$opt_f, "utf8", Encode::FB_QUIET) ) {
-			print STDERR "this file was not validly encoded in $opt_f: \"". &$from_print($dir.$oldfile) ."\"\n";
+			if ($opt_parsable) {
+				print "errormsg".$del."fileencodedinvalid".$del.$dir."/".$oldfile.$fin_del;
+			} else {
+				print $outerr "this file was not validly encoded in $opt_f: \"". &$from_print($dir."/".$oldfile) ."\"\n";
+			}
 			return undef;
 		}
 	}
@@ -539,10 +676,14 @@ sub char_checkenc() {
 	}
 ##	print "$oldfile|$utf8oldfile|$new|$filenamelength\n";
 	if (! $filenamelength) {
-		print STDERR "$opt_t doesn't cover all needed characters for: \"". &$from_print($dir.$oldfile) ."\"\n";
+		if ($opt_parsable) {
+			print "errormsg".$del."charsetdoesntcoverneededcharacters".$del.$dir."/".$oldfile.$fin_del;
+		} else {
+			print $outerr "$opt_t doesn't cover all needed characters for: \"". &$from_print($dir."/".$oldfile) ."\"\n";
+		}
 		return undef;
 	} elsif ($filenamelength > $maxfilenamelength) {
-		print STDERR &$from_print($dir.$oldfile).": resulting filename is $filenamelength bytes long (max: $maxfilenamelength)\n";
+		print $outerr "".&$from_print($dir."/".$oldfile).": resulting filename is $filenamelength bytes long (max: $maxfilenamelength)\n";
 		return undef;
 	}
 	&posix_check($new);
@@ -550,8 +691,9 @@ sub char_checkenc() {
 }
 
 sub printusage {
+	&check_for_perl_bugs;
 	print <<END;
-convmv 1.12 - converts filenames from one encoding to another
+convmv 1.13 - converts filenames from one encoding to another
 Copyright (C) 2003-2008 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -608,7 +750,7 @@ sub this_is_valid_utf8() {
 	# see perl bug #49830. convmv 1.10 and Perl 5.10 will again only work with
 	# --nosmart.
 	#
-	#okay now perluniintro suggests to do this:
+	# okay, now perluniintro suggests to do this:
 
 	eval { decode_utf8($string, Encode::FB_CROAK); };
 	if ($@) {
@@ -630,6 +772,9 @@ sub dummy() {
 }
 
 sub print_ask() { # takes 2 arguments, string and askornot
+	if ($opt_parsable) {
+		return 1;
+	}
 	my $a="";
 	print shift;
 	my $ask = shift;
@@ -651,7 +796,11 @@ sub unescape_checkenc() {
 		&posix_check(&unescape_get_newname($name));
 		return 1;
 	} else {
-		print STDERR "\"",&$from_print($name),"\" not ASCII - this does not seem to be an escaped filename.\n";
+		if ($opt_parsable) {
+			print "errormsg".$del."notanescapedfile".$del.$name.$fin_del;
+		} else {
+			print $outerr "\"",&$from_print($name),"\" not ASCII - this does not seem to be an escaped filename.\n";
+		}
 		return undef;
 	}
 }
@@ -680,7 +829,7 @@ sub upperlower_get_newname() {
 	my $oldname = shift;
 	my $name=$oldname;
 	if (! from_to($name, $opt_f, "utf8", Encode::FB_QUIET)) { # should also leave NFD as it is ...
-		print STDERR "\"",&$from_print($oldname),"\" not encoded in $opt_f ? Supply the correct encoding via -f option!\n";
+		print $outerr "\"",&$from_print($oldname),"\" not encoded in $opt_f ? Supply the correct encoding via -f option!\n";
 		return undef;
 	}
 	_utf8_on($name);	# Unicode in Perl can be a real pain ...
@@ -690,7 +839,11 @@ sub upperlower_get_newname() {
 			$name =~ s/ı/I/g;
 			$name =~ s/i/İ/g;
 		}
-		# we do not want to upper ß to SS ! Let's substitute it with NUL+DWSLQH (NUL may not be part of filename) and get it back after uc()
+		# we do not want to upper ß to SS ! Let's substitute it with
+		# NUL+DWSLQH (NUL may not be part of filename) and get it back after uc().
+		# Unicode 5.1(draft) news: Uppercasing U+00DF (ß) LATIN SMALL LETTER SHARP S
+		# to the new U+1E9E LATIN CAPITAL LETTER SHARP S.
+		# but until now I don't see use for this in filenames ...
 		$name =~ s/ß/\000DWSLQH/g;
 		$name = uc($name);
 		$name =~ s/\000DWSLQH/ß/g;
@@ -707,7 +860,7 @@ sub upperlower_get_newname() {
 	# the problems that arise with this letter are endless ...
 #	$name =~ s/i\314\207/i/g if ($from_is_utf8);
 	if (! from_to($name, "utf8", $opt_f, Encode::FB_QUIET)) {
-		print STDERR $opt_upper?"Upper":"Lower","case of \"",&$from_print($oldname),"\" not possible in $opt_f ! Maybe supply different encoding via -f option.\n";
+		print $outerr $opt_upper?"Upper":"Lower","case of \"",&$from_print($oldname),"\" not possible in $opt_f ! Maybe supply different encoding via -f option.\n";
 		return undef;
 	}
 	return $name;
@@ -716,7 +869,7 @@ sub upperlower_get_newname() {
 sub posix_check() {
 	my $name=shift;
 	if ($name =~ m/[\000\/]/) {
-		print STDERR "WARNING: new filename \"",&$to_print($name),"\" contains characters, which are not POSIX filesystem conform! This may result in data loss.\n";
+		print $outerr "WARNING: new filename \"",&$to_print($name),"\" contains characters, which are not POSIX filesystem conform! This may result in data loss.\n";
 		$warnings_occurred=1;
 	}
 }
@@ -731,10 +884,42 @@ sub cap2utf8() {
 } 
 
 sub check_for_broken_perl_release() {
+	# Check that most basic Perl Encode features we use work reliably:
+	my $test = ""."\366";
+	my $error = "";
+	eval { decode_utf8($test, Encode::FB_CROAK); };
+	if (not $@) {
+		$error .= "eval {decode_utf8(\$non-utf8, Encode::FB_CROAK);}; check failed.\n";
+	}
+	$test = ""."ö";
+	eval { decode_utf8($test, Encode::FB_CROAK); };
+	if ($@) {
+		$error .= "eval {decode_utf8(\$utf8, Encode::FB_CROAK);}; check failed.\n";
+	}
+	if ($error) {
+		print "Your Perl release is too broken to make convmv work reliably:\n", $error;
+		exit 1;
+	}
+}
+
+sub check_for_perl_bugs() {
+	# Check for certain Perl fleas that we more or less have to work around:
 	# until 1.08 I used to use decode_utf8() but see perl bug #37757 (perl 5.8.7/8)
 	#if (not defined(decode_utf8($string)) )
 	my $bugs = "";
 	my $test = "\366";
+
+	my $u8test = NFD(""."ö"); 	# "". is intended as only so we have _utf8_off set
+					# otherwise from_to doesn't convert the $data to
+					# something else.
+	# print "DEBUG: string is UTF-8 flagged: ",is_utf8($u8test) ? "yes" : "no","\n";
+	eval { from_to($u8test, 'utf8', 'iso-8859-1'); };
+	if ($u8test ne "\366") {
+		# Perl::Encode guys think that conversion from decomposed UTF-8
+		# to any other charset does not have to be supported by from_to.
+		# Why, when NFC or NFD this is both perfectly valid UTF-8?
+		$bugs .= "#22111 ";
+	}
 	if (decode_utf8($test)) {
 		$bugs .= "#37757 ";
 		# Convmv 1.08 and below would not work here!
