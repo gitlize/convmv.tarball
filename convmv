@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# convmv 1.13 - converts filenames from one encoding to another
+# convmv 1.14 - converts filenames from one encoding to another
 # Copyright © 2003-2008 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -306,6 +306,7 @@ $maxfilenamelength=255;
 # $maxpathlength=4096; # this might be used somehow, somewhere?
 
 %dir_time_hash=();
+my $this_is_valid_utf8;
 
 # delimiter and final delimiter for parsable mode:
 $del = "\0\n";
@@ -643,7 +644,7 @@ sub char_checkenc() {
 	my $oldfile=shift;
 	my $new=$oldfile;
 	if ($from_is_utf8) {
-		if (! &this_is_valid_utf8($new)) {
+		if (! &$this_is_valid_utf8($new)) {
 			if ($opt_parsable) {
 				print "errormsg".$del."filenotutf8".$del.$oldfile.$fin_del;
 			} else {
@@ -693,7 +694,7 @@ sub char_checkenc() {
 sub printusage {
 	&check_for_perl_bugs;
 	print <<END;
-convmv 1.13 - converts filenames from one encoding to another
+convmv 1.14 - converts filenames from one encoding to another
 Copyright (C) 2003-2008 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -726,14 +727,23 @@ END
 
 sub looks_like_utf8() {
 	my $string = shift;
-	if ($string =~ m/[^[:ascii:]]/ and &this_is_valid_utf8($string)) {
+	if ($string =~ m/[^[:ascii:]]/ and &$this_is_valid_utf8($string)) {
 		return 1;
 	} else {
 		return undef;
 	}
 }
 
-sub this_is_valid_utf8() {
+sub this_is_valid_utf8_decode {
+	my $string = shift;
+	if (not defined(decode_utf8($string))) {
+		return undef;
+	} else {
+		return 1;
+	}
+}
+
+sub this_is_valid_utf8_decode_CROAK() {
 	my $string = shift;
 	# until 1.08 I used to use decode_utf8() but see perl bug #37757 (perl 5.8.7/8)
 	#if (not defined(decode_utf8($string)) ) {
@@ -752,7 +762,7 @@ sub this_is_valid_utf8() {
 	#
 	# okay, now perluniintro suggests to do this:
 
-	eval { decode_utf8($string, Encode::FB_CROAK); };
+	eval 'decode_utf8($string, Encode::FB_CROAK);';
 	if ($@) {
 		return undef;
 	} else {
@@ -884,22 +894,32 @@ sub cap2utf8() {
 } 
 
 sub check_for_broken_perl_release() {
-	# Check that most basic Perl Encode features we use work reliably:
+	# Check that most basic Perl Encode features we use work reliably
+	# and decide which code path we use for &this_is_valid_utf8():
 	my $test = ""."\366";
 	my $error = "";
-	eval { decode_utf8($test, Encode::FB_CROAK); };
+
+	if (not defined(decode_utf8($test))) {
+		$this_is_valid_utf8=\&this_is_valid_utf8_decode;
+		return 0;
+	}
+	$error .= "decode_utf8(\$test) check failed\n";
+	
+	eval 'decode_utf8($test, Encode::FB_CROAK);';
 	if (not $@) {
-		$error .= "eval {decode_utf8(\$non-utf8, Encode::FB_CROAK);}; check failed.\n";
+		$error .= "eval 'decode_utf8(\$non-utf8, Encode::FB_CROAK);'; check failed.\n";
+	} else {
+		$test = ""."ö";
+		eval 'decode_utf8($test, Encode::FB_CROAK);';
+		if ($@) {
+			$error .= "eval 'decode_utf8(\$utf8, Encode::FB_CROAK);'; check failed.\n";
+		} else {
+			$this_is_valid_utf8=\&this_is_valid_utf8_decode_CROAK;
+			return 0;
+		}
 	}
-	$test = ""."ö";
-	eval { decode_utf8($test, Encode::FB_CROAK); };
-	if ($@) {
-		$error .= "eval {decode_utf8(\$utf8, Encode::FB_CROAK);}; check failed.\n";
-	}
-	if ($error) {
-		print "Your Perl release is too broken to make convmv work reliably:\n", $error;
-		exit 1;
-	}
+	print "Your Perl release is too broken to make convmv work reliably:\n",$error;
+	exit 1;
 }
 
 sub check_for_perl_bugs() {
@@ -913,7 +933,7 @@ sub check_for_perl_bugs() {
 					# otherwise from_to doesn't convert the $data to
 					# something else.
 	# print "DEBUG: string is UTF-8 flagged: ",is_utf8($u8test) ? "yes" : "no","\n";
-	eval { from_to($u8test, 'utf8', 'iso-8859-1'); };
+	eval "from_to($u8test, 'utf8', 'iso-8859-1');";
 	if ($u8test ne "\366") {
 		# Perl::Encode guys think that conversion from decomposed UTF-8
 		# to any other charset does not have to be supported by from_to.

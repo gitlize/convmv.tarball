@@ -1,3 +1,6 @@
+1.14
+- this release is once more dedicated to Perl::Encode. There is no way to do a check for valid UTF-8 which works with all Perl releases from 5.8.0 up to 5.10.0. We now have to test which code works in our Perl's Encode version and then decide which code path to go.
+
 1.13
 - move non fatal Perl bug checks into the help screen output
 - fix Perl warnings when wrong/unknown charset is used
