@@ -1,3 +1,7 @@
+1.15
+- add --dump-options to make it easier to allow people to write a bash completion file. Let me know when you have one ready :-)
+- fix a bug where on case-insensitive filesystems --upper and --lower did not work because we thought the new file would already exist (stat "foo" and stat "FOO" are the same, yeah. The obvious workaround to use "--replace" would delete the files on case-insensitive filesystems instead, which was even worse. Case conversion should be working well now, I tested it on Darwin and on case-insensitive XFS. The latter one is a bit buggy by the way, see https://bugzilla.kernel.org/show_bug.cgi?id=39512. convmv works around that bug, too.
+
 1.14
 - this release is once more dedicated to Perl::Encode. There is no way to do a check for valid UTF-8 which works with all Perl releases from 5.8.0 up to 5.10.0. We now have to test which code works in our Perl's Encode version and then decide which code path to go.
 
@@ -10,7 +14,7 @@
 - add --preserve-mtimes option to restore mtimes of parent directories
 - allow an argv to be a symlink
 - don't checksum deleted files in tar ball and use sha256 now
-- allow skippig of certain test suite tests, useful for OS X to skip NFC/NFD related stuff, for example "make test SKIPTESTS=nfd-test,someothertest" will skip that test(s)
+- allow skippig of certain test suite tests, useful for OS X to skip NFC/NFD related stuff, for example "make test SKIP=nfd-test,someothertest" will skip that test(s)
 
 1.12
 - now work with Perl 5.10 using an eval block

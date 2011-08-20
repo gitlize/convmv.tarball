@@ -1,6 +1,6 @@
 #!/usr/bin/perl
-# convmv 1.14 - converts filenames from one encoding to another
-# Copyright © 2003-2008 Bjoern JACKE <bjoern@j3e.de>
+# convmv 1.15 - converts filenames from one encoding to another
+# Copyright © 2003-2011 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 # under the terms of the GNU General Public License version 2 or 3 as
@@ -145,6 +145,10 @@ subsequently became a separate letter.
 
 print a short summary of available options
 
+=item B<--dump-options>
+
+print a list of all available options
+
 =back
 
 =head1 DESCRIPTION
@@ -276,7 +280,8 @@ Getopt::Long::Configure ("bundling");
 binmode STDOUT, ":bytes";
 binmode STDERR, ":bytes";
 
-GetOptions	('nfc'=>\$opt_nfc,
+my %opts = (
+		'nfc'=>\$opt_nfc,
 		'nfd'=>\$opt_nfd,
 		'f=s'=>\$opt_f,
 		't=s'=>\$opt_t,
@@ -298,7 +303,9 @@ GetOptions	('nfc'=>\$opt_nfc,
 		'parsable'=>\$opt_parsable,
 		'fixdouble'=>\$opt_fixdouble,
 		'preserve-mtimes'=>\$opt_mtimes,
-		) or exit 1;
+		'dump-options'=>\$opt_dumpoptions,
+		);
+GetOptions %opts or exit 1;
 use File::Compare;
 $errors_occurred=0;
 $warnings_occurred=0;
@@ -313,6 +320,7 @@ $del = "\0\n";
 $fin_del = "\0\0\n";
 
 &listvalidencodings and exit 0 if ($opt_list);
+&dumpoptions and exit 0 if ($opt_dumpoptions);
 &printusage and exit 1 if (!@ARGV or $opt_help);
 
 &check_for_broken_perl_release();
@@ -561,6 +569,7 @@ sub renameit() {
 	my $oldfile=shift;
 	my $newname=shift;
 	my $cmd;
+	my $ci_old_new_same_inode = 0;
 	$newname=encode_utf8($newname) if ($to_is_utf8);
 	if ($opt_exec) {
 				$cmd = $opt_exec;
@@ -574,7 +583,26 @@ sub renameit() {
 		&print_ask ("mv \"". &$from_print($dir."/".$oldfile)."\"\t\"".&$from_print($dir)."/".&$to_print($newname)."\"",$opt_i) or return;
 	}
 	&save_parent_mtime($dir) if ($opt_mtimes);
-	if (-e $newname and !$opt_exec) {
+	# the following is to handle case-insensitive filesystems:
+	if ($opt_lower or $opt_upper) {
+		if ((stat $oldfile)[1] == (stat $newname)[1]) {
+			$ci_old_new_same_inode = 1;
+			#print $outerr "found case-insensitive filesystem...\n";
+			if ($opt_notest) {
+				my $try;
+				for (1 .. 10000) {
+					$try = "convmvtmp".$_;
+					if (! -e $try) {
+						#print $outerr "(via temp rename to \"$try\")\n";
+						rename ($oldfile, $try);
+						$oldfile=$try;
+						last;
+					}
+				}
+			}
+		}
+	}
+	if (-e $newname and !$opt_exec and !$ci_old_new_same_inode) {
 		if ($opt_replace and !&compare($oldfile,$newname)) {
 			if ($opt_notest) {
 				unlink $newname or print $outerr "Error: $!\n";
@@ -636,6 +664,15 @@ sub listvalidencodings() {
 	return 1;
 }
 
+sub dumpoptions() {
+	for (keys %opts) {
+		s/=.*//;
+		print "-" if (length($_) > 1);
+		print "-$_\n";
+	}
+	return 1;
+}
+
 sub fixdouble_checkenc() {
 	return 1;
 }
@@ -694,8 +731,8 @@ sub char_checkenc() {
 sub printusage {
 	&check_for_perl_bugs;
 	print <<END;
-convmv 1.14 - converts filenames from one encoding to another
-Copyright (C) 2003-2008 Bjoern JACKE <bjoern\@j3e.de>
+convmv 1.15 - converts filenames from one encoding to another
+Copyright (C) 2003-2011 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 under the terms of the GNU General Public License version 2 or 3 as published
