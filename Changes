@@ -1,3 +1,10 @@
+2.0
+- fix checks for NFD conversion, where convmv could run into a "resulting filename is ... bytes long (max: 255) error message for no obvious reason.
+- the --preserve-mtimes option is the default now
+- fix a bug where mtimes might not be restored in some cases
+- add --map option to support additional character mappings like to mapping Microsoft's illegal NTFS characters
+- issue warning if we cannot traverse a directory in recursive mode
+
 1.15
 - add --dump-options to make it easier to allow people to write a bash completion file. Let me know when you have one ready :-)
 - fix a bug where on case-insensitive filesystems --upper and --lower did not work because we thought the new file would already exist (stat "foo" and stat "FOO" are the same, yeah. The obvious workaround to use "--replace" would delete the files on case-insensitive filesystems instead, which was even worse. Case conversion should be working well now, I tested it on Darwin and on case-insensitive XFS. The latter one is a bit buggy by the way, see https://bugzilla.kernel.org/show_bug.cgi?id=39512. convmv works around that bug, too.
