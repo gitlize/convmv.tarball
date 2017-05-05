@@ -1,6 +1,6 @@
 #!/usr/bin/perl
-# convmv 2.0 - converts filenames from one encoding to another
-# Copyright © 2003-2015 Bjoern JACKE <bjoern@j3e.de>
+# convmv 2.01 - converts filenames from one encoding to another
+# Copyright © 2003-2017 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 # under the terms of the GNU General Public License version 2 or 3 as
@@ -57,7 +57,8 @@ does not affect rename operation itself.
 
 execute the given command. You have to quote the command and #1 will be
 substituted by the old, #2 by the new filename. Using this option link 
-targets will stay untouched.
+targets will stay untouched. Have in mind that #1 and #2 will be quoted
+by convmv already, you must not add extra quotation marks around them.
 
 Example:
 
@@ -792,8 +793,8 @@ sub char_checkenc() {
 sub printusage {
 	&check_for_perl_bugs;
 	print <<END;
-convmv 2.0 - converts filenames from one encoding to another
-Copyright (C) 2003-2015 Bjoern JACKE <bjoern\@j3e.de>
+convmv 2.01 - converts filenames from one encoding to another
+Copyright (C) 2003-2017 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
 under the terms of the GNU General Public License version 2 or 3 as published
@@ -919,12 +920,12 @@ sub map_get_newname() {
 	return $_ if ($_ eq "." or $_ eq "..");
 	_utf8_on($_); # this is needed for tr/multibyte/non-multibyte/ to work! Otherwise we would
 	              # have to make a s/// for each character, grrr...
-	if ($opt_map eq "ntfs-sfm") { # see MS KB 117258
-		tr/\x01-\x1f\"\*\/\<\>\?\\\|/\x{f001}-\x{f027}/;
+	if ($opt_map eq "ntfs-sfm") { # see MS KB 117258 (but map : instead of /
+		tr/\x01-\x1f\"\*\:\<\>\?\\\|/\x{f001}-\x{f027}/;
 		s/ $/\x{f028}/;  # Space, only if occurring as the last character of the name
 		s/\.$/\x{f029}/; # period, only if occurring as the last character of the name
 	} elsif ($opt_map eq "ntfs-sfm-undo") {
-		tr/\x{f001}-\x{f027}/\x01-\x1f"*\/<>?\\| /;
+		tr/\x{f001}-\x{f027}/\x01-\x1f"*:<>?\\| /;
 		s/\x{f028}$/ /;  # Space, only if occurring as the last character of the name
 		s/\x{f029}$/./;  # period, only if occurring as the last character of the name
 	} elsif ($opt_map eq "ntfs-sfu") { # +0xF000, see MS KB ???? anyone knows a link or has archived an old one?

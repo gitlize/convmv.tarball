@@ -1,3 +1,6 @@
+2.01
+- map : instead of / in SFU mapping tables
+
 2.0
 - fix checks for NFD conversion, where convmv could run into a "resulting filename is ... bytes long (max: 255) error message for no obvious reason.
 - the --preserve-mtimes option is the default now
