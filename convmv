@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# convmv 2.01 - converts filenames from one encoding to another
+# convmv 2.02 - converts filenames from one encoding to another
 # Copyright © 2003-2017 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -156,6 +156,13 @@ By the way: The superscript dot of the letter i was added in the Middle Ages to
 distinguish the letter (in manuscripts) from adjacent vertical strokes in such
 letters as u, m, and n. J is a variant form of i which emerged at this time and
 subsequently became a separate letter.
+
+=item B<--caseful-sz>
+
+let convmv convert the sz ligature (ß, U+00DF) to the uppercase version
+(U+1E9E) and vice versa. As of 2017 most fs case mapping tables don't treat
+those two code points as case equivalents. Thus the default of convmv is to
+treat it caseless for now also (unless this option is used).
 
 =item B<--help>
 
@@ -321,6 +328,7 @@ my %opts = (
 		'upper'=>\$opt_upper,
 		'lower'=>\$opt_lower,
 		'dotlessi'=>\$opt_dotlessi,
+		'caseful-sz'=>\$opt_caseful_sz,
 		'parsable'=>\$opt_parsable,
 		'fixdouble'=>\$opt_fixdouble,
 		'preserve-mtimes!'=>\$opt_mtimes,
@@ -793,7 +801,7 @@ sub char_checkenc() {
 sub printusage {
 	&check_for_perl_bugs;
 	print <<END;
-convmv 2.01 - converts filenames from one encoding to another
+convmv 2.02 - converts filenames from one encoding to another
 Copyright (C) 2003-2017 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -823,6 +831,7 @@ by the Free Software Foundation.
 --help     print this help
 END
 #--dotlessi care about the dotless i issue of certain locales (use with care)
+#--caseful-sz treat make convmv aware of caputal sz ligature (ß vs. ẞ)
 }
 
 sub looks_like_utf8() {
@@ -1004,13 +1013,23 @@ sub upperlower_get_newname() {
 		# but until now I don't see use for this in filenames ...
 		$name =~ s/ß/\000DWSLQH/g;
 		$name = uc($name);
-		$name =~ s/\000DWSLQH/ß/g;
+		if ($opt_caseful_sz) {
+			$name =~ s/\000DWSLQH/ẞ/g;
+		} else {
+			$name =~ s/\000DWSLQH/ß/g;
+		}
 	} else {
 		if ($opt_dotlessi) {
 			$name =~ s/I/ı/g;
 			$name =~ s/İ/i/g;
 		}
+		$name =~ s/ẞ/\000dwslqh/g;
 		$name = lc($name);
+		if ($opt_caseful_sz) {
+			$name =~ s/\000dwslqh/ß/g;
+		} else {
+			$name =~ s/\000dwslqh/ẞ/g;
+		}
 	}
 	use bytes;
 	_utf8_off($name);
