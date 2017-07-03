@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# convmv 2.02 - converts filenames from one encoding to another
+# convmv 2.03 - converts filenames from one encoding to another
 # Copyright © 2003-2017 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -159,7 +159,7 @@ subsequently became a separate letter.
 
 =item B<--caseful-sz>
 
-let convmv convert the sz ligature (ß, U+00DF) to the uppercase version
+let convmv convert the sz ligature (U+00DF) to the uppercase version
 (U+1E9E) and vice versa. As of 2017 most fs case mapping tables don't treat
 those two code points as case equivalents. Thus the default of convmv is to
 treat it caseless for now also (unless this option is used).
@@ -801,7 +801,7 @@ sub char_checkenc() {
 sub printusage {
 	&check_for_perl_bugs;
 	print <<END;
-convmv 2.02 - converts filenames from one encoding to another
+convmv 2.03 - converts filenames from one encoding to another
 Copyright (C) 2003-2017 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
