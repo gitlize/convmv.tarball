@@ -1,3 +1,8 @@
+2.04
+- check for valid utf-8 also in upperlower_checkenc()
+- fix parsable output, missed the path files to run utime() on
+- add --run-parsable option to blindly run what a file generated with --parsable tells us to do
+
 2.03
 - fix man page build due to non-ASCII char (thanks, Anton!)
 

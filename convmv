@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# convmv 2.03 - converts filenames from one encoding to another
+# convmv 2.04 - converts filenames from one encoding to another
 # Copyright © 2003-2017 Bjoern JACKE <bjoern@j3e.de>
 #
 # This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -106,6 +106,12 @@ kind of information, the second column mostly contains the file that is to be
 modified and if appropriate the third column contains the modified value.  Each
 column is separated by \0\n (nullbyte newline). Each row (one action) is
 separated by \0\0\n (nullbyte nullbyte newline).
+
+=item B<--run-parsable>
+
+This option can be used to blindly execute the output of a previous
+B<--parsable> run.  This way it's possible to rename a huge amount of file in
+a minimum of time.
 
 =item B<--no-preserve-mtimes>
 
@@ -330,6 +336,7 @@ my %opts = (
 		'dotlessi'=>\$opt_dotlessi,
 		'caseful-sz'=>\$opt_caseful_sz,
 		'parsable'=>\$opt_parsable,
+		'run-parsable=s'=>\$opt_runparsable,
 		'fixdouble'=>\$opt_fixdouble,
 		'preserve-mtimes!'=>\$opt_mtimes,
 		'dump-options'=>\$opt_dumpoptions,
@@ -354,13 +361,14 @@ $fin_del = "\0\0\n";
 
 &listvalidencodings and exit 0 if ($opt_list);
 &dumpoptions and exit 0 if ($opt_dumpoptions);
+&runparsable and exit 0 if ($opt_runparsable);
 &printusage and exit 1 if (!@ARGV or $opt_help);
 
 &check_for_broken_perl_release();
 
-if ($opt_parsable) {
+if ($opt_parsable or $opt_runparsable) {
 	if ($opt_notest or $opt_exec or $opt_i) {
-		die "--parsable mode cannot be used with --notest, --exec or -i\n";
+		die "--parsable/--run-parsable mode cannot be used with --notest, --exec or -i\n";
 	}
 }
 
@@ -566,11 +574,11 @@ sub process_main {
 		}
 	} elsif (-d $arg) {
 #		$type="directory";
+		&restore_times_if_any($dir,$arg) if ($opt_mtimes);
 		$newname=&$get_newname($arg);
 		if ($newname and $newname ne $arg) {
 			&renameit($arg,$newname);
 		}
-		&restore_times_if_any($dir,$arg,$newname) if ($opt_mtimes);
 	} elsif (-f $arg) {
 #		$type="file";
 		$newname=&$get_newname($arg);
@@ -578,7 +586,6 @@ sub process_main {
 			&renameit($arg,$newname);
 		}
 	}
-	# &restore_times_if_any($dir,$arg,$newname) if ($opt_mtimes); # only in -d case needed !? -> moved up!
 
 	chdir $pwd;
 }
@@ -709,18 +716,17 @@ sub save_parent_mtime() {
 sub restore_times_if_any() {
 	my $dir=shift;
 	my $old=shift;
-	my $new=shift;
 	if ($dir eq ".") {
 		$dir = "";
 	} else {
 		$dir .= "/";
 	}
 	$dir .= $old;
-	# print $outerr "Trying to delete \"$dir\" now \"$new\" from %dir_time_hash\n"; # debug print
 	if (exists $dir_time_hash{$dir}) {
 		if ($opt_notest) {
-			utime ${$dir_time_hash{$dir}}[0], ${$dir_time_hash{$dir}}[1], $new or print $outerr "Could not run utime() on $new: $!\n";
-			print UNDOLOG "utime ".${$dir_time_hash{$dir}}[0].", ".${$dir_time_hash{$dir}}[1].", ".$new." or print \"Could not run utime() on $new: \$!\n\"";
+			# in this functions cwd is $dir - so we need to call utime() on $old (and not $path)
+			utime ${$dir_time_hash{$dir}}[0], ${$dir_time_hash{$dir}}[1], $old or print $outerr "Could not run utime() on $old: $!\n";
+			print UNDOLOG "utime ".${$dir_time_hash{$dir}}[0].", ".${$dir_time_hash{$dir}}[1].", ".$dir." or print \"Could not run utime() on $dir: \$!\n\"";
 		} elsif ($opt_parsable) {
 			print "utime".$del.$dir.$del.${$dir_time_hash{$dir}}[0].$del.${$dir_time_hash{$dir}}[1].$del.${$dir_time_hash{$dir}}[2].$fin_del;
 		}
@@ -801,7 +807,7 @@ sub char_checkenc() {
 sub printusage {
 	&check_for_perl_bugs;
 	print <<END;
-convmv 2.03 - converts filenames from one encoding to another
+convmv 2.04 - converts filenames from one encoding to another
 Copyright (C) 2003-2017 Bjoern JACKE <bjoern\@j3e.de>
 
 This program comes with ABSOLUTELY NO WARRANTY; it may be copied or modified
@@ -983,6 +989,16 @@ sub unescape_get_newname() { # return undef on error, string otherwise
 sub upperlower_checkenc() {
 	my $oldname = shift;
 	my $newname = upperlower_get_newname($oldname);
+	if ($from_is_utf8) {
+		if (! &$this_is_valid_utf8($oldname)) {
+			if ($opt_parsable) {
+				print "errormsg".$del."filenotutf8".$del.$dir."/".$oldname.$fin_del;
+			} else {
+				print $outerr "this file was not validly encoded in UTF-8: \"". &$from_print($dir."/".$oldname) ."\"\n";
+				}
+			return undef;
+		}
+	}
 	if (not defined($newname)) {
 		return undef;
 	} else {
@@ -996,7 +1012,11 @@ sub upperlower_get_newname() {
 	my $oldname = shift;
 	my $name=$oldname;
 	if (! from_to($name, $opt_f, "utf8", Encode::FB_QUIET)) { # should also leave NFD as it is ...
-		print $outerr "\"",&$from_print($oldname),"\" not encoded in $opt_f ? Supply the correct encoding via -f option!\n";
+		if ($opt_parsable) {
+			print "errormsg".$del."fileencodedinvalid".$del.$dir."/".$oldfile.$fin_del;
+		} else {
+			print $outerr "\"",&$from_print($oldname),"\" not encoded in $opt_f ? Supply the correct encoding via -f option!\n";
+		}
 		return undef;
 	}
 	_utf8_on($name);	# Unicode in Perl can be a real pain ...
@@ -1037,7 +1057,11 @@ sub upperlower_get_newname() {
 	# the problems that arise with this letter are endless ...
 #	$name =~ s/i\314\207/i/g if ($from_is_utf8);
 	if (! from_to($name, "utf8", $opt_f, Encode::FB_QUIET)) {
-		print $outerr $opt_upper?"Upper":"Lower","case of \"",&$from_print($oldname),"\" not possible in $opt_f ! Maybe supply different encoding via -f option.\n";
+		if ($opt_parsable) {
+			print "errormsg".$del."fileencodingunknown".$del.$dir."/".$oldfile.$fin_del;
+		} else {
+			print $outerr $opt_upper?"Upper":"Lower","case of \"",&$from_print($oldname),"\" not possible in $opt_f ! Maybe supply different encoding via -f option.\n";
+		}
 		return undef;
 	}
 	return $name;
@@ -1059,6 +1083,29 @@ sub cap2utf8() {
 	}
 	return $oldname;
 } 
+
+
+sub runparsable() {
+	$/=$fin_del;
+	open(FH, "<", $opt_runparsable);
+	while(<FH>) {
+		my @line = split($del, $_);
+		if ($line[0] eq "rename") {
+			print "renaming ".$line[1]."\n";
+			rename($line[1], $line[2]) or print "-> FAILED\n";
+		} elsif ($line[0] eq "utime") {
+			print "restoring times on ".$line[1]."\n";
+			utime $line[2], $line[3], $line[1] or print "-> FAILED\n";
+		} elsif ($line[0] eq "symlink") {
+			print "symlinking ".$line[1]."\n";
+			symlink($line[1], $line[2]) or print "-> FAILED\n";
+		} elsif ($line[0] eq "unlink") {
+			print "deleting ".$line[1]."\n";
+			unlink $line[1] or print "-> FAILED\n";
+		}
+	}
+	close FH;
+}
 
 sub check_for_broken_perl_release() {
 	# Check that most basic Perl Encode features we use work reliably

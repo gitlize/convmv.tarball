@@ -5,7 +5,6 @@ Does this make sense? :
 - --exclude option
 - verbose mode printing actual scanned files
 - --null option for "find -print0 | xargs convmv --null" usage
-- map illegal ntfs characters away: " / \ * ? < > | :
 - map "most" strange chracters to ASCII equivalences
 - keep/restore old ctime - difficult to do! No Perl module, not
   even a ctime option in standard "touch" command :-|
