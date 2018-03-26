@@ -1,3 +1,7 @@
+2.05
+- allow NFC/NFD conversion on APFS volumes, add man page section for that filesystem
+- use case- and normalization-insensitivity workarounds also for parsable mode
+
 2.04
 - check for valid utf-8 also in upperlower_checkenc()
 - fix parsable output, missed the path files to run utime() on
